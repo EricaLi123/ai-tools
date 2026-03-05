@@ -14,7 +14,7 @@ Get notified when Claude finishes a task or needs your permission.
 ## Quick Start
 
 ```bash
-npx claude-code-notify setup
+npx @erica_s/claude-code-notify setup
 ```
 
 This will:
@@ -32,8 +32,8 @@ After setup, your Claude Code hooks config will look like:
 ```json
 {
     "hooks": {
-        "Stop": [{ "hooks": [{ "type": "command", "command": "cmd /c npx -y claude-code-notify@latest", "async": true }] }],
-        "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "cmd /c npx -y claude-code-notify@latest", "async": true }] }]
+        "Stop": [{ "hooks": [{ "type": "command", "command": "cmd /c npx -y @erica_s/claude-code-notify@latest", "async": true }] }],
+        "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "cmd /c npx -y @erica_s/claude-code-notify@latest", "async": true }] }]
     }
 }
 ```

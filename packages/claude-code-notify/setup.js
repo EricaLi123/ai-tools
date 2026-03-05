@@ -80,7 +80,7 @@ console.log("      Done");
 console.log("[4/4] Configuring hooks...");
 
 const hookCommand =
-  "cmd /c npx -y claude-code-notify@latest";
+  "cmd /c npx -y @erica_s/claude-code-notify@latest";
 
 const hookEntry = {
   hooks: [
