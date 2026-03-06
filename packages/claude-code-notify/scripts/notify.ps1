@@ -39,7 +39,21 @@ try {
         if (-not $wmi -or $wmi.ParentProcessId -eq 0) { break }
         $currentPID = $wmi.ParentProcessId
     }
-} catch { Write-Log "window detection failed: $_" }
+} catch { Write-Log "window detection via process tree failed: $_" }
+
+# Fallback: find terminal process directly if process tree walk failed
+if (-not $hwnd) {
+    try {
+        $terminalProcs = Get-Process -Name WindowsTerminal, cmd, powershell, pwsh, ConEmuC64, ConEmuC -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne 0 } |
+            Select-Object -First 1
+        if ($terminalProcs) {
+            $hwnd = $terminalProcs.MainWindowHandle
+            $terminalName = $terminalProcs.ProcessName
+            Write-Log "fallback found terminal: $terminalName"
+        }
+    } catch { Write-Log "fallback detection failed: $_" }
+}
 Write-Log "hwnd=$hwnd terminal=$terminalName"
 
 # 4. Build notification title with terminal name and project info
