@@ -8,26 +8,12 @@ Get notified when Claude finishes a task or needs your permission.
 
 - **Toast notification** — popup when Claude is done or waiting for approval
 - **Taskbar flash** — flashes the terminal window until you switch to it
-- **Click to activate** — click "Open" on the notification to jump to the terminal (Windows 11)
-- Auto-detects terminal name and project name
+- **Click to activate** — click "Open" on the toast to jump back to the terminal
+- **Zero dependencies** — just install and use, nothing else needed
 
-## Quick Start
+## Usage
 
-```bash
-npx @erica_s/claude-code-notify setup
-```
-
-This will:
-1. Copy scripts to `%USERPROFILE%\.claude\scripts\claude-notify\`
-2. Install the [BurntToast](https://github.com/Windos/BurntToast) PowerShell module
-3. Register the click-to-activate protocol handler
-4. Configure hooks in `settings.json` (won't overwrite existing hooks)
-
-Restart Claude Code after setup.
-
-## How It Works
-
-After setup, your Claude Code hooks config will look like:
+Add to your `~/.claude/settings.json`:
 
 ```json
 {
@@ -38,14 +24,15 @@ After setup, your Claude Code hooks config will look like:
 }
 ```
 
-Every time Claude stops or requests permission, it runs `npx claude-code-notify@latest`, which always pulls the latest version automatically.
+That's it. The click-to-activate protocol is registered automatically on install.
 
-## Notification Format
+## Notification Example
 
 ```
 Title:   Claude Done (WindowsTerminal)
 Body:    Task finished
          my-project
+Button:  [Open]
 ```
 
 ## Requirements
@@ -56,9 +43,8 @@ Body:    Task finished
 
 ## Known Limitations
 
-- **Windows 10**: Toast notifications and taskbar flash work. Click-to-activate ("Open" button) does not work due to OS limitations on non-packaged desktop apps.
-- **Windows 11**: All features work.
-- **macOS / Linux**: Not yet supported.
+- **Windows 10**: Click-to-activate ("Open" button) may not work due to OS limitations.
+- **macOS / Linux**: Not supported.
 
 ## License
 
