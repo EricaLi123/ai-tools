@@ -32,17 +32,51 @@ Write-Log "event=$eventName title=$Title"
 $hwnd = $null
 $terminalName = 'Terminal'
 
-# 3a. Walk process tree (covers Windows Terminal, VS Code, Cursor)
+# 3a. Walk process tree using kernel API (CreateToolhelp32Snapshot — faster than CIM, may bridge MSYS2 gap)
 try {
-    $procMap = @{}
-    Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId | ForEach-Object { $procMap[[int]$_.ProcessId] = [int]$_.ParentProcessId }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+public class ToolHelp {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr CreateToolhelp32Snapshot(uint f, uint pid);
+    [DllImport("kernel32.dll")]
+    static extern bool Process32First(IntPtr h, ref PROCESSENTRY32 e);
+    [DllImport("kernel32.dll")]
+    static extern bool Process32Next(IntPtr h, ref PROCESSENTRY32 e);
+    [DllImport("kernel32.dll")]
+    static extern bool CloseHandle(IntPtr h);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    public struct PROCESSENTRY32 {
+        public uint dwSize; public uint cntUsage; public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID; public uint th32ModuleID; public uint cntThreads;
+        public uint th32ParentProcessID; public int pcPriClassBase; public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile;
+    }
+    public static Dictionary<int, int> GetParentMap() {
+        var map = new Dictionary<int, int>();
+        IntPtr snap = CreateToolhelp32Snapshot(2, 0);
+        PROCESSENTRY32 pe = new PROCESSENTRY32();
+        pe.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+        if (Process32First(snap, ref pe)) {
+            do { map[(int)pe.th32ProcessID] = (int)pe.th32ParentProcessID; }
+            while (Process32Next(snap, ref pe));
+        }
+        CloseHandle(snap);
+        return map;
+    }
+}
+'@ -ErrorAction SilentlyContinue
+
+    $procMap = [ToolHelp]::GetParentMap()
     $currentPID = $PID
     for ($i = 0; $i -lt 50; $i++) {
         try {
             $proc = Get-Process -Id $currentPID -ErrorAction Stop
             if ($proc.MainWindowHandle -ne 0) {
                 $hwnd = $proc.MainWindowHandle
-                $terminalName = $proc.ProcessName
+                $terminalName = if ($proc.Product) { $proc.Product } elseif ($proc.Description) { $proc.Description } else { $proc.ProcessName }
                 Write-Log "found window at depth=$i pid=$currentPID name=$terminalName"
                 break
             }
@@ -52,38 +86,26 @@ try {
     }
 } catch { Write-Log "tree walk failed: $_" }
 
-# 3b. Fallback: conhost whose parent is our ancestor (standalone cmd/powershell)
+# 3b. Fallbacks when tree walk fails (MSYS2 gap, conhost sibling, etc.)
 if (-not $hwnd) {
-    try {
-        $ancestors = @{}
-        $ap = $PID
-        for ($j = 0; $j -lt 50; $j++) {
-            $ancestors[$ap] = $true
-            if (-not $procMap.ContainsKey($ap) -or $procMap[$ap] -eq 0) { break }
-            $ap = $procMap[$ap]
-        }
-        $conhost = Get-Process -Name conhost -ErrorAction SilentlyContinue | Where-Object {
-            $_.MainWindowHandle -ne 0 -and $procMap.ContainsKey($_.Id) -and $ancestors.ContainsKey($procMap[$_.Id])
-        } | Select-Object -First 1
-        if ($conhost) {
-            $hwnd = $conhost.MainWindowHandle
-            $terminalName = 'Console'
-            Write-Log "fallback conhost: pid=$($conhost.Id)"
-        }
-    } catch { Write-Log "conhost fallback failed: $_" }
+    # Fallback 1: VSCODE_PID — set by VS Code / Cursor in integrated terminals
+    $vscodePid = $env:VSCODE_PID
+    if ($vscodePid) {
+        try {
+            $proc = Get-Process -Id $vscodePid -ErrorAction Stop
+            if ($proc.MainWindowHandle -ne 0) {
+                $hwnd = $proc.MainWindowHandle
+                $terminalName = if ($proc.Product) { $proc.Product } elseif ($proc.Description) { $proc.Description } else { $proc.ProcessName }
+                Write-Log "fallback VSCODE_PID=$vscodePid name=$terminalName"
+            }
+        } catch { Write-Log "VSCODE_PID fallback failed: $_" }
+    }
 }
 
 Write-Log "hwnd=$hwnd terminal=$terminalName"
 
 # 4. Build notification
-$friendlyNames = @{
-    'WindowsTerminal' = 'Windows Terminal'
-    'Code' = 'VS Code'
-    'Cursor' = 'Cursor'
-    'Console' = 'Console'
-}
-$displayName = if ($friendlyNames[$terminalName]) { $friendlyNames[$terminalName] } else { $terminalName }
-$notificationTitle = "$Title ($displayName)"
+$notificationTitle = "$Title ($terminalName)"
 $escapedTitle = [System.Security.SecurityElement]::Escape($notificationTitle)
 $escapedMessage = [System.Security.SecurityElement]::Escape($Message)
 
