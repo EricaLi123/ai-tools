@@ -40,8 +40,17 @@ The click-to-activate protocol is registered automatically on install.
 
 ## Notification Example
 
+**生产版本：**
 ```
 Title:   Claude Done (Windows Terminal)
+Body:    Task finished
+         my-project
+Button:  [Open]
+```
+
+**开发版本（本地 npm link）：**
+```
+Title:   [DEV] Claude Done (Windows Terminal)
 Body:    Task finished
          my-project
 Button:  [Open]

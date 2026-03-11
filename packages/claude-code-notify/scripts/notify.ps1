@@ -4,19 +4,18 @@
 # All hook data (event, session_id, log file path, hwnd) is passed via environment
 # variables by cli.js, which reads stdin once before spawning this script.
 
-$sessionId = if ($env:CLAUDE_NOTIFY_SESSION_ID) { $env:CLAUDE_NOTIFY_SESSION_ID } else { 'unknown' }
-$LogDir = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "claude-code-notify")
-if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
-$LogFile = if ($env:CLAUDE_NOTIFY_LOG_FILE) { $env:CLAUDE_NOTIFY_LOG_FILE } else {
-    [System.IO.Path]::Combine($LogDir, "session-$sessionId.log")
-}
+# log 路径由 cli.js 计算并传入
+$LogFile = $env:CLAUDE_NOTIFY_LOG_FILE
 function Write-Log($msg) {
     $line = "[$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fff')] [ps1 pid=$PID] $msg"
     [Console]::Error.WriteLine($line)
     try { Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8 } catch {}
 }
 
-Write-Log "started session=$sessionId"
+Write-Log "started"
+
+# isDev 由 cli.js 通过环境变量传入
+$isDev = $env:CLAUDE_NOTIFY_IS_DEV -ne "0"
 
 # 1. Determine title/message from env vars set by cli.js
 $eventName = if ($env:CLAUDE_NOTIFY_EVENT) { $env:CLAUDE_NOTIFY_EVENT } else { '' }
@@ -59,7 +58,9 @@ $iconName = switch ($eventName) {
 $iconPath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PSScriptRoot, "..", "assets", "icons", "$iconName.png"))
 
 # 3. Build toast payload
-$notificationTitle = "$Title ($terminalName)"
+# dev 版本在标题前添加 [DEV] 标记
+$devMarker = if ($isDev) { "[DEV] " } else { "" }
+$notificationTitle = "$devMarker$Title ($terminalName)"
 $escapedTitle = [System.Security.SecurityElement]::Escape($notificationTitle)
 $escapedMessage = [System.Security.SecurityElement]::Escape($Message)
 
