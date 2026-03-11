@@ -5,7 +5,7 @@
 # It reads the URL from $_CCN_URL env var (set by cmd /c wrapper).
 $activateScript = @'
 $url = $env:_CCN_URL
-$handleString = $url -replace 'custom\.claude-code\.activate-window://', '' -replace '[/\\"]', ''
+$handleString = $url -replace '^[^:]+://', '' -replace '[/\\"]', ''
 $handleString = $handleString.Trim()
 if (-not $handleString) { exit 1 }
 try {

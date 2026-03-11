@@ -21,9 +21,9 @@ Write-Log "started session=$sessionId"
 # 1. Determine title/message from env vars set by cli.js
 $eventName = if ($env:CLAUDE_NOTIFY_EVENT) { $env:CLAUDE_NOTIFY_EVENT } else { '' }
 switch ($eventName) {
-    'Stop'              { $Title = '[test]Claude Done';             $Message = 'Task finished' }
-    'PermissionRequest' { $Title = '[test]Claude Needs Permission'; $Message = 'Waiting for your approval' }
-    default             { $Title = '[test]Claude';             $Message = 'Notification' }
+    'Stop'              { $Title = 'Claude Done';             $Message = 'Task finished' }
+    'PermissionRequest' { $Title = 'Claude Needs Permission'; $Message = 'Waiting for your approval' }
+    default             { $Title = 'Claude';                  $Message = 'Notification' }
 }
 $projectDir = $env:CLAUDE_PROJECT_DIR
 if ($projectDir) {
@@ -50,7 +50,15 @@ if ($env:CLAUDE_NOTIFY_HWND) {
 
 Write-Log "hwnd=$hwnd terminal=$terminalName"
 
-# 3. Build notification
+# 按事件类型选取图标（随包一起分发，存放在 assets/icons/）
+$iconName = switch ($eventName) {
+    'Stop'              { 'stop' }
+    'PermissionRequest' { 'permission' }
+    default             { 'info' }
+}
+$iconPath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PSScriptRoot, "..", "assets", "icons", "$iconName.png"))
+
+# 3. Build toast payload
 $notificationTitle = "$Title ($terminalName)"
 $escapedTitle = [System.Security.SecurityElement]::Escape($notificationTitle)
 $escapedMessage = [System.Security.SecurityElement]::Escape($Message)
@@ -61,7 +69,15 @@ if ($hwnd) {
     $actionsXml = "<actions><action activationType=`"protocol`" arguments=`"$activateUrl`" content=`"Open`"/></actions>"
 }
 
-# 3. Send toast
+# 图标 XML（路径无效时为空字符串，保证降级安全）
+$iconXml = ''
+if ($iconPath -and (Test-Path $iconPath)) {
+    $uriPath = $iconPath.Replace('\', '/')
+    $escapedIconSrc = [System.Security.SecurityElement]::Escape("file:///$uriPath")
+    $iconXml = "<image placement=`"appLogoOverride`" src=`"$escapedIconSrc`" hint-crop=`"circle`"/>"
+}
+
+# 4. Send toast
 try {
     [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
     [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null
@@ -70,6 +86,7 @@ try {
 <toast>
   <visual>
     <binding template="ToastGeneric">
+      $iconXml
       <text>$escapedTitle</text>
       <text>$escapedMessage</text>
     </binding>
@@ -86,7 +103,7 @@ try {
     Write-Log "toast sent: $notificationTitle"
 } catch { Write-Log "toast failed: $_" }
 
-# 4. Flash taskbar
+# 5. Flash taskbar
 if ($hwnd) {
     try {
         Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class FlashW { [DllImport("user32.dll")] public static extern bool FlashWindowEx(ref FLASHWINFO p); [StructLayout(LayoutKind.Sequential)] public struct FLASHWINFO { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; } }' -ErrorAction SilentlyContinue

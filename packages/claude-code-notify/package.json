@@ -8,6 +8,7 @@
   "files": [
     "bin/",
     "scripts/",
+    "assets/",
     "postinstall.js"
   ],
   "scripts": {
