@@ -41,7 +41,7 @@ The click-to-activate protocol is registered automatically on install.
 ## Notification Example
 
 ```
-Title:   Claude Done (WindowsTerminal)
+Title:   Claude Done (Windows Terminal)
 Body:    Task finished
          my-project
 Button:  [Open]
@@ -50,7 +50,7 @@ Button:  [Open]
 ## How It Works
 
 1. Reads hook event JSON from stdin
-2. Walks the process tree (single WMI query) to find the terminal window
+2. Walks the process tree (ToolHelp32 snapshot) to find the terminal window
 3. Sends a native WinRT toast notification (using PowerShell's registered AppUserModelId)
 4. Flashes the terminal taskbar button
 

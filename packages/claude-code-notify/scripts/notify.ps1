@@ -1,25 +1,29 @@
 # Claude Code Notification Script — Native WinRT Toast (zero module dependencies)
 # Toast fires FIRST (fast), then window detection + flash (slower)
+#
+# All hook data (event, session_id, log file path, hwnd) is passed via environment
+# variables by cli.js, which reads stdin once before spawning this script.
 
-function Write-Log($msg) { [Console]::Error.WriteLine("claude-code-notify: $msg") }
+$sessionId = if ($env:CLAUDE_NOTIFY_SESSION_ID) { $env:CLAUDE_NOTIFY_SESSION_ID } else { 'unknown' }
+$LogDir = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "claude-code-notify")
+if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
+$LogFile = if ($env:CLAUDE_NOTIFY_LOG_FILE) { $env:CLAUDE_NOTIFY_LOG_FILE } else {
+    [System.IO.Path]::Combine($LogDir, "session-$sessionId.log")
+}
+function Write-Log($msg) {
+    $line = "[$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fff')] [ps1 pid=$PID] $msg"
+    [Console]::Error.WriteLine($line)
+    try { Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8 } catch {}
+}
 
-# 1. Read stdin JSON
-$hookData = $null
-try {
-    if ([Console]::In.Peek() -ne -1) {
-        $hookData = [Console]::In.ReadToEnd() | ConvertFrom-Json
-        Write-Log "stdin received"
-    } else {
-        Write-Log "stdin empty"
-    }
-} catch { Write-Log "stdin parse failed: $_" }
+Write-Log "started session=$sessionId"
 
-# 2. Determine title/message
-$eventName = if ($hookData.hook_event_name) { $hookData.hook_event_name } else { '' }
+# 1. Determine title/message from env vars set by cli.js
+$eventName = if ($env:CLAUDE_NOTIFY_EVENT) { $env:CLAUDE_NOTIFY_EVENT } else { '' }
 switch ($eventName) {
-    'Stop'              { $Title = 'Claude Done';             $Message = 'Task finished' }
-    'PermissionRequest' { $Title = 'Claude Needs Permission'; $Message = 'Waiting for your approval' }
-    default             { $Title = 'Claude';             $Message = 'Notification' }
+    'Stop'              { $Title = '[test]Claude Done';             $Message = 'Task finished' }
+    'PermissionRequest' { $Title = '[test]Claude Needs Permission'; $Message = 'Waiting for your approval' }
+    default             { $Title = '[test]Claude';             $Message = 'Notification' }
 }
 $projectDir = $env:CLAUDE_PROJECT_DIR
 if ($projectDir) {
@@ -28,83 +32,25 @@ if ($projectDir) {
 }
 Write-Log "event=$eventName title=$Title"
 
-# 3. Window detection
+# 2. Window detection
 $hwnd = $null
 $terminalName = 'Terminal'
 
-# 3a. Walk process tree using kernel API (CreateToolhelp32Snapshot — faster than CIM, may bridge MSYS2 gap)
-try {
-    Add-Type -TypeDefinition @'
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-public class ToolHelp {
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern IntPtr CreateToolhelp32Snapshot(uint f, uint pid);
-    [DllImport("kernel32.dll")]
-    static extern bool Process32First(IntPtr h, ref PROCESSENTRY32 e);
-    [DllImport("kernel32.dll")]
-    static extern bool Process32Next(IntPtr h, ref PROCESSENTRY32 e);
-    [DllImport("kernel32.dll")]
-    static extern bool CloseHandle(IntPtr h);
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    public struct PROCESSENTRY32 {
-        public uint dwSize; public uint cntUsage; public uint th32ProcessID;
-        public IntPtr th32DefaultHeapID; public uint th32ModuleID; public uint cntThreads;
-        public uint th32ParentProcessID; public int pcPriClassBase; public uint dwFlags;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile;
-    }
-    public static Dictionary<int, int> GetParentMap() {
-        var map = new Dictionary<int, int>();
-        IntPtr snap = CreateToolhelp32Snapshot(2, 0);
-        PROCESSENTRY32 pe = new PROCESSENTRY32();
-        pe.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
-        if (Process32First(snap, ref pe)) {
-            do { map[(int)pe.th32ProcessID] = (int)pe.th32ParentProcessID; }
-            while (Process32Next(snap, ref pe));
-        }
-        CloseHandle(snap);
-        return map;
-    }
-}
-'@ -ErrorAction SilentlyContinue
-
-    $procMap = [ToolHelp]::GetParentMap()
-    $currentPID = $PID
-    for ($i = 0; $i -lt 50; $i++) {
-        try {
-            $proc = Get-Process -Id $currentPID -ErrorAction Stop
-            if ($proc.MainWindowHandle -ne 0) {
-                $hwnd = $proc.MainWindowHandle
-                $terminalName = if ($proc.Product) { $proc.Product } elseif ($proc.Description) { $proc.Description } else { $proc.ProcessName }
-                Write-Log "found window at depth=$i pid=$currentPID name=$terminalName"
-                break
-            }
-        } catch {}
-        if (-not $procMap.ContainsKey($currentPID) -or $procMap[$currentPID] -eq 0) { break }
-        $currentPID = $procMap[$currentPID]
-    }
-} catch { Write-Log "tree walk failed: $_" }
-
-# 3b. Fallbacks when tree walk fails (MSYS2 gap, conhost sibling, etc.)
-if (-not $hwnd) {
-    # Fallback 1: VSCODE_PID — set by VS Code / Cursor in integrated terminals
-    $vscodePid = $env:VSCODE_PID
-    if ($vscodePid) {
-        try {
-            $proc = Get-Process -Id $vscodePid -ErrorAction Stop
-            if ($proc.MainWindowHandle -ne 0) {
-                $hwnd = $proc.MainWindowHandle
-                $terminalName = if ($proc.Product) { $proc.Product } elseif ($proc.Description) { $proc.Description } else { $proc.ProcessName }
-                Write-Log "fallback VSCODE_PID=$vscodePid name=$terminalName"
-            }
-        } catch { Write-Log "VSCODE_PID fallback failed: $_" }
-    }
+# 3a. 优先使用 cli.js 预先找好的 hwnd（通过 find-hwnd.ps1 在 Node 侧查父链得到）。
+# 这样可以绕过 MSYS2 断链问题：git bash 里 PowerShell 自身的父链走不到编辑器窗口，
+# 但 Node → cmd → Claude Code Node → Code.exe 这条链在 Node 侧是完整的。
+if ($env:CLAUDE_NOTIFY_HWND) {
+    $hwnd = [IntPtr][long]$env:CLAUDE_NOTIFY_HWND
+    try {
+        $proc = Get-Process -Id (Get-Process | Where-Object { $_.MainWindowHandle -eq $hwnd } | Select-Object -First 1 -ExpandProperty Id) -ErrorAction Stop
+        $terminalName = if ($proc.Product) { $proc.Product } elseif ($proc.Description) { $proc.Description } else { $proc.ProcessName }
+    } catch {}
+    Write-Log "hwnd from cli.js: $hwnd terminal=$terminalName"
 }
 
 Write-Log "hwnd=$hwnd terminal=$terminalName"
 
-# 4. Build notification
+# 3. Build notification
 $notificationTitle = "$Title ($terminalName)"
 $escapedTitle = [System.Security.SecurityElement]::Escape($notificationTitle)
 $escapedMessage = [System.Security.SecurityElement]::Escape($Message)
@@ -115,7 +61,7 @@ if ($hwnd) {
     $actionsXml = "<actions><action activationType=`"protocol`" arguments=`"$activateUrl`" content=`"Open`"/></actions>"
 }
 
-# 5. Send toast
+# 3. Send toast
 try {
     [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
     [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null
@@ -140,7 +86,7 @@ try {
     Write-Log "toast sent: $notificationTitle"
 } catch { Write-Log "toast failed: $_" }
 
-# 6. Flash taskbar
+# 4. Flash taskbar
 if ($hwnd) {
     try {
         Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class FlashW { [DllImport("user32.dll")] public static extern bool FlashWindowEx(ref FLASHWINFO p); [StructLayout(LayoutKind.Sequential)] public struct FLASHWINFO { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; } }' -ErrorAction SilentlyContinue
