@@ -7,14 +7,27 @@ if (process.platform !== "win32") {
 const { execFileSync } = require("child_process");
 const path = require("path");
 
-const script = path.join(__dirname, "scripts", "register-protocol.ps1");
-try {
-  execFileSync(
-    "powershell",
-    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script],
-    { stdio: "inherit" }
-  );
-} catch {
-  // Non-fatal — protocol registration is nice-to-have
-  console.warn("claude-code-notify: protocol registration skipped (non-fatal)");
+const tasks = [
+  {
+    kind: "powershell",
+    path: path.join(__dirname, "scripts", "register-protocol.ps1"),
+    warning: "claude-code-notify: protocol registration skipped (non-fatal)",
+  },
+];
+
+for (const task of tasks) {
+  try {
+    if (task.kind === "powershell") {
+      execFileSync(
+        "powershell",
+        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", task.path],
+        { stdio: "inherit" }
+      );
+      continue;
+    }
+
+    execFileSync("node", [task.path], { stdio: "inherit" });
+  } catch {
+    console.warn(task.warning);
+  }
 }

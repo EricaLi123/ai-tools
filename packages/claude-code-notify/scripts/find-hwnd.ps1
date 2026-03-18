@@ -1,6 +1,7 @@
 # 从指定 PID 向上遍历父进程链，输出第一个有窗口 handle 的进程的 hwnd。
 # 由 cli.js 在 spawn notify.ps1 之前调用，结果通过 CLAUDE_NOTIFY_HWND 环境变量传入。
-param([int]$StartPid)
+# -IncludeShellPid 启用时，输出格式为 hwnd|shellPid|isWindowsTerminal(1/0)
+param([int]$StartPid, [switch]$IncludeShellPid)
 
 $ErrorActionPreference = 'SilentlyContinue'
 
@@ -36,14 +37,37 @@ public class PH {
 
 $map = [PH]::Map()
 $cur = $StartPid
-[Console]::Error.WriteLine("find-hwnd: StartPid=$StartPid")
+$shellPid = 0
+$isWindowsTerminal = $false
+$shellNames = @('bash','powershell','pwsh','cmd','zsh','fish')
+$wtNames = @('WindowsTerminal','OpenConsole')
+
+[Console]::Error.WriteLine("find-hwnd: StartPid=$StartPid IncludeShellPid=$IncludeShellPid")
 for ($i = 0; $i -lt 50; $i++) {
     try {
         $p = Get-Process -Id $cur -ErrorAction Stop
-        [Console]::Error.WriteLine("find-hwnd: depth=$i pid=$cur name=$($p.ProcessName) hwnd=$($p.MainWindowHandle)")
+        $pName = $p.ProcessName
+        [Console]::Error.WriteLine("find-hwnd: depth=$i pid=$cur name=$pName hwnd=$($p.MainWindowHandle)")
+        # 记录最近的 shell 进程 PID。
+        # 不取“第一个 shell”，因为全局命令经常会经过短命的 cmd/volta 包装层；
+        # watcher 需要附着到离终端最近、仍然存活的交互 shell。
+        if ($IncludeShellPid -and $shellNames -contains $pName) {
+            $shellPid = $cur
+            [Console]::Error.WriteLine("find-hwnd: shellPid=$shellPid")
+        }
+        # 检测 Windows Terminal
+        if ($IncludeShellPid -and -not $isWindowsTerminal -and $wtNames -contains $pName) {
+            $isWindowsTerminal = $true
+            [Console]::Error.WriteLine("find-hwnd: isWindowsTerminal=true (detected $pName)")
+        }
         if ($p.MainWindowHandle -ne 0) {
             [Console]::Error.WriteLine("find-hwnd: found hwnd=$($p.MainWindowHandle)")
-            Write-Output $p.MainWindowHandle
+            if ($IncludeShellPid) {
+                $wtFlag = if ($isWindowsTerminal) { '1' } else { '0' }
+                Write-Output "$($p.MainWindowHandle)|$shellPid|$wtFlag"
+            } else {
+                Write-Output $p.MainWindowHandle
+            }
             exit
         }
     } catch {
@@ -92,7 +116,12 @@ public class PipeHelper {
                     [Console]::Error.WriteLine("find-hwnd: pipe-chain depth=$i pid=$cur name=$($p.ProcessName) hwnd=$($p.MainWindowHandle)")
                     if ($p.MainWindowHandle -ne 0) {
                         [Console]::Error.WriteLine("find-hwnd: found via pipe hwnd=$($p.MainWindowHandle)")
-                        Write-Output $p.MainWindowHandle
+                        if ($IncludeShellPid) {
+                            $wtFlag = if ($isWindowsTerminal) { '1' } else { '0' }
+                            Write-Output "$($p.MainWindowHandle)|$shellPid|$wtFlag"
+                        } else {
+                            Write-Output $p.MainWindowHandle
+                        }
                         exit
                     }
                 } catch {
@@ -107,4 +136,9 @@ public class PipeHelper {
     }
 }
 [Console]::Error.WriteLine("find-hwnd: not found, returning 0")
-Write-Output 0
+if ($IncludeShellPid) {
+    $wtFlag = if ($isWindowsTerminal) { '1' } else { '0' }
+    Write-Output "0|$shellPid|$wtFlag"
+} else {
+    Write-Output 0
+}
