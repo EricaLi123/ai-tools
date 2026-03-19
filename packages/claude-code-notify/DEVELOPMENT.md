@@ -6,12 +6,22 @@
 Claude Hook (stdin JSON)
   → bin/cli.js
       ├─ 读 stdin → 提取 session_id、hook_event_name
-      ├─ 显式 shell pid 覆盖（--shell-pid / CLAUDE_NOTIFY_SHELL_PID）
-      ├─ 默认通过 get-shell-pid.ps1 从当前 console 自动探测交互 shell pid
-      ├─ 自动探测失败时，回退到 find-hwnd.ps1 父链识别出的 shell pid
       ├─ 建 log 文件：%TEMP%\claude-code-notify\session-<id>.log
-      ├─ spawnSync scripts/find-hwnd.ps1（从 Node PID 向上找有窗口的祖先进程）
-      │     └─ 返回 hwnd（或 0）
+      ├─ 显式 shell pid 覆盖（--shell-pid / CLAUDE_NOTIFY_SHELL_PID）
+      ├─ detectTerminalContext()
+      │    ├─ spawnSync scripts/find-hwnd.ps1 -IncludeShellPid
+      │    │     └─ 返回 hwnd|shellPid|isWindowsTerminal
+      │    ├─ 默认通过 get-shell-pid.ps1 从当前 console 自动探测交互 shell pid
+      │    └─ 自动探测失败时，回退到 find-hwnd.ps1 父链识别出的 shell pid
+      ├─ 若当前是 Windows Terminal：
+      │    ├─ 先直接向当前 stdout/stderr 写 OSC 4;264 设色
+      │    └─ spawnSync scripts/start-tab-color-watcher.ps1（stdio=ignore）
+      │          ├─ Start-Process -NoNewWindow → tab-color-watcher.ps1
+      │          └─ 通过临时 pid 文件把 watcher pid 回传给 cli.js
+      │                ├─ AttachConsole(shellPid) → 打开 CONIN$/CONOUT$
+      │                ├─ 再写一遍 OSC 4;264，补上异步 hook 场景的设色
+      │                ├─ 等待“目标 console 自己有新输入 + 目标 WT 窗口回到前台”
+      │                └─ 双通道写出 OSC 104;264 reset
       └─ spawn scripts/notify.ps1（通过环境变量传入 hwnd、event、log 路径）
             ├─ 用 CLAUDE_NOTIFY_HWND 发 toast
             └─ flash 任务栏
@@ -202,7 +212,8 @@ Claude Hook 触发 → cli.js
 - **为什么 shell pid 默认改成 console 级自动探测：** 设色阶段本来就发生在当前 Tab，对应 shell 也应当从“当前 console 有哪些进程”里拿，这比单纯沿父进程链猜测更贴近直接在 PowerShell/cmd Tab 里执行命令的真实场景。
 - **为什么仍保留父链回退：** Claude hook 的异步启动链有时拿不到稳定的 console 进程列表，但父链方案在某些真实环境中已经被验证能工作。作为 fallback 更务实。
 - **为什么还保留显式 shell pid 覆盖：** 调试、特殊 launcher 或极端环境下，调用方仍然可能比自动探测更清楚目标 shell 是谁，因此保留 `--shell-pid` / `CLAUDE_NOTIFY_SHELL_PID` 作为 override。
-- **为什么通过 launcher 用 `Start-Process -NoNewWindow` 拉 watcher：** 最新实测日志里，Node 侧 `detached` child 已经返回了 PID，但对应 watcher 进程根本没有写出自己的 `started` 日志，说明那条启动链在当前机器上并没有真正把 watcher 跑起来。`Start-Process -NoNewWindow` 这条链此前已经被验证能稳定把 watcher 启起来，同时又不会打开新窗口，因此保留它，只把 reset 机制换成“沿同一 console 输出流写 OSC”。
+- **为什么通过 launcher 用 `Start-Process -NoNewWindow` 拉 watcher：** 最新实测日志里，Node 侧 `detached` child 已经返回了 PID，但对应 watcher 进程根本没有写出自己的 `started` 日志，说明那条启动链在当前机器上并没有真正把 watcher 跑起来。`Start-Process -NoNewWindow` 这条链此前已经被验证能稳定把 watcher 启起来，同时又不会打开新窗口，因此保留它。
+- **为什么 launcher 改成“pid 文件回传 + stdio ignore”：** 早期让 launcher 通过 `stdout` 回传 watcher pid 时，watcher 会继承这些 pipe 句柄，导致 `cli.js` 的 `spawnSync(...)` 在手工执行 `claude-code-notify` 时一直挂住，看起来像“通知发完但命令不返回”。现在改成 launcher 把 watcher pid 写入临时文件，`cli.js` 读取后立刻删除，同时把 launcher 的 `stdio` 设为 `ignore`，这样 watcher 还能附着同一个 console，但不会再拖住前台命令退出。
 - **为什么用户返回事件不限于按键：** 用户只要已经把注意力切回该 Tab，就应当视为提示已被看到。实现上优先接受 console 可观察到的用户返回信号，例如焦点恢复、按键、鼠标事件，而不是要求用户必须敲一次键。
 - **为什么不做定时自动恢复：** 通知触发后，用户可能已经离开电脑一段时间。若用 5 秒、10 秒之类的定时器自动清掉颜色，用户回来时反而失去定位线索。当前设计要求提示一直保留，直到用户真的回到对应 Tab 并产生可识别的用户事件，再恢复默认颜色。
 - **为什么当前不再区分 PowerShell / cmd / bash：** reset 不再通过前台 shell 执行命令，因此不需要为不同 shell 维护不同的 quoting 规则；只要目标 console 可附着，就可以直接往输出通道写恢复序列。
@@ -210,4 +221,4 @@ Claude Hook 触发 → cli.js
 
 **限制：** 仅限 Windows Terminal（OSC 4;264 是 WT 私有扩展），非 WT 环境不 spawn watcher，原有功能不受影响。
 
-**实现文件：** [`get-shell-pid.ps1`](scripts/get-shell-pid.ps1)（当前 console shell 自动探测）、[`find-hwnd.ps1`](scripts/find-hwnd.ps1)（窗口检测）、[`tab-color-watcher.ps1`](scripts/tab-color-watcher.ps1)（watcher 主体）、[`cli.js`](bin/cli.js)（集成调度）
+**实现文件：** [`get-shell-pid.ps1`](scripts/get-shell-pid.ps1)（当前 console shell 自动探测）、[`find-hwnd.ps1`](scripts/find-hwnd.ps1)（窗口检测）、[`start-tab-color-watcher.ps1`](scripts/start-tab-color-watcher.ps1)（watcher launcher + pid 文件回传）、[`tab-color-watcher.ps1`](scripts/tab-color-watcher.ps1)（watcher 主体）、[`cli.js`](bin/cli.js)（集成调度）
