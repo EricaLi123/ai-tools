@@ -24,6 +24,7 @@ const SIDECAR_SESSION_RESOLUTION_TIMEOUT_MS = 90 * 1000;
 const SIDECAR_SESSION_RESOLUTION_MAX_PAST_MS = 30 * 1000;
 const SIDECAR_SESSION_RESOLUTION_MAX_FUTURE_MS = 10 * 60 * 1000;
 const CODEX_APPROVAL_NOTIFY_GRACE_MS = 1000;
+const CODEX_READ_ONLY_APPROVAL_NOTIFY_GRACE_MS = 5 * 1000;
 const RECENT_REQUIRE_ESCALATED_TTL_MS = 30 * 60 * 1000;
 const SESSION_APPROVAL_CONFIRM_LOOKBACK_MS = 5 * 60 * 1000;
 const SESSION_APPROVAL_GRANT_TTL_MS = 30 * 60 * 1000;
@@ -1972,10 +1973,12 @@ function queuePendingApprovalNotification({
     return;
   }
 
+  const graceMs = getCodexApprovalNotifyGraceMs(event);
   const pending = {
     ...event,
     pendingSinceMs: Date.now(),
-    deadlineMs: Date.now() + CODEX_APPROVAL_NOTIFY_GRACE_MS,
+    deadlineMs: Date.now() + graceMs,
+    graceMs,
   };
 
   pendingApprovalNotifications.set(key, pending);
@@ -1984,7 +1987,7 @@ function queuePendingApprovalNotification({
   }
 
   runtime.log(
-    `queued approval pending sessionId=${pending.sessionId || "unknown"} turnId=${pending.turnId || ""} callId=${pending.callId || ""} deadlineMs=${pending.deadlineMs}`
+    `queued approval pending sessionId=${pending.sessionId || "unknown"} turnId=${pending.turnId || ""} callId=${pending.callId || ""} graceMs=${graceMs} deadlineMs=${pending.deadlineMs}`
   );
 }
 
@@ -2004,17 +2007,102 @@ function cancelPendingApprovalNotification({
     return false;
   }
 
-  pendingApprovalCallIds.delete(callId);
+  return cancelPendingApprovalNotificationByKey({
+    runtime,
+    pendingApprovalNotifications,
+    pendingApprovalCallIds,
+    key,
+    reason,
+  });
+}
+
+function cancelPendingApprovalNotificationByKey({
+  runtime,
+  pendingApprovalNotifications,
+  pendingApprovalCallIds,
+  key,
+  reason,
+}) {
+  if (!key) {
+    return false;
+  }
+
   const pending = pendingApprovalNotifications.get(key);
   if (!pending) {
+    pendingApprovalCallIds.forEach((mappedKey, mappedCallId) => {
+      if (mappedKey === key) {
+        pendingApprovalCallIds.delete(mappedCallId);
+      }
+    });
     return false;
   }
 
   pendingApprovalNotifications.delete(key);
+  if (pending.callId) {
+    pendingApprovalCallIds.delete(pending.callId);
+  }
   runtime.log(
-    `cancelled approval pending sessionId=${pending.sessionId || "unknown"} turnId=${pending.turnId || ""} callId=${callId} reason=${reason || "unknown"}`
+    `cancelled approval pending sessionId=${pending.sessionId || "unknown"} turnId=${pending.turnId || ""} callId=${pending.callId || ""} reason=${reason || "unknown"}`
   );
   return true;
+}
+
+function cancelPendingApprovalNotificationsBySuppression({
+  runtime,
+  pendingApprovalNotifications,
+  pendingApprovalCallIds,
+  sessionId,
+  turnId = "",
+  approvalPolicy = "",
+  sandboxPolicy = null,
+  approvedCommandRules = [],
+  sessionApprovalGrants,
+  nowMs = Date.now(),
+}) {
+  if (!runtime || !pendingApprovalNotifications || !sessionId) {
+    return 0;
+  }
+
+  let cancelled = 0;
+  Array.from(pendingApprovalNotifications.entries()).forEach(([key, pending]) => {
+    if (!pending || pending.sessionId !== sessionId) {
+      return;
+    }
+    if (turnId && pending.turnId && pending.turnId !== turnId) {
+      return;
+    }
+
+    const suppressionReason =
+      getCodexRequireEscalatedSuppressionReason({
+        event: pending,
+        approvalPolicy,
+        sandboxPolicy,
+        approvedCommandRules,
+      }) ||
+      getSessionRequireEscalatedSuppressionReason({
+        event: pending,
+        nowMs,
+        sessionApprovalGrants,
+      });
+
+    if (!suppressionReason) {
+      return;
+    }
+
+    if (
+      cancelPendingApprovalNotificationByKey({
+        runtime,
+        pendingApprovalNotifications,
+        pendingApprovalCallIds,
+        key,
+        reason: suppressionReason,
+      })
+    ) {
+      cancelled += 1;
+    }
+  });
+
+  return cancelled;
 }
 
 function flushPendingApprovalNotifications({
@@ -2133,6 +2221,18 @@ function extractApprovedRuleShellCommand(pattern) {
     return String(pattern[2] || "").trim();
   }
   return "";
+}
+
+function getCodexApprovalNotifyGraceMs(event) {
+  if (
+    event &&
+    event.eventType === "require_escalated_tool_call" &&
+    isLikelyReadOnlyShellCommand(event.toolArgs)
+  ) {
+    return CODEX_READ_ONLY_APPROVAL_NOTIFY_GRACE_MS;
+  }
+
+  return CODEX_APPROVAL_NOTIFY_GRACE_MS;
 }
 
 function getCodexRequireEscalatedSuppressionReason({
@@ -2781,6 +2881,17 @@ function handleSessionRecord(
       source: "approved_rule_saved",
       turnId: state.turnId || "",
     });
+    cancelPendingApprovalNotificationsBySuppression({
+      runtime,
+      pendingApprovalNotifications,
+      pendingApprovalCallIds,
+      sessionId: state.sessionId || parseSessionIdFromRolloutPath(state.filePath) || "",
+      turnId: state.turnId || "",
+      approvalPolicy: state.approvalPolicy || "",
+      sandboxPolicy: state.sandboxPolicy || null,
+      approvedCommandRules: getApprovedCommandRules(approvedCommandRuleCache, runtime.log),
+      sessionApprovalGrants,
+    });
     return;
   }
 
@@ -2877,12 +2988,22 @@ function handleCodexTuiLogLine(
 
   const confirmation = parseCodexTuiApprovalConfirmation(line);
   if (confirmation) {
+    const approvalContext = sessionApprovalContexts.get(confirmation.sessionId || "");
     confirmSessionApprovalForRecentEvents({
       recentRequireEscalatedEvents,
       runtime,
       sessionApprovalGrants,
       sessionId: confirmation.sessionId,
       source: confirmation.source,
+    });
+    cancelPendingApprovalNotificationsBySuppression({
+      runtime,
+      pendingApprovalNotifications,
+      pendingApprovalCallIds,
+      sessionId: confirmation.sessionId,
+      approvalPolicy: (approvalContext && approvalContext.approvalPolicy) || "",
+      sandboxPolicy: (approvalContext && approvalContext.sandboxPolicy) || null,
+      sessionApprovalGrants,
     });
     return;
   }
@@ -2962,7 +3083,7 @@ function buildCodexSessionEvent(state, record) {
         rawEventType: "require_escalated_tool_call",
       }),
       eventType: "require_escalated_tool_call",
-      approvalDispatch: "immediate",
+      approvalDispatch: "pending",
       callId,
       toolArgs: args,
       dedupeKey: buildApprovalDedupeKey({
@@ -3443,8 +3564,10 @@ module.exports = {
   buildCodexTuiApprovalEvent,
   buildApprovalDedupeKey,
   buildCodexSessionWatchAutostartCommand,
+  cancelPendingApprovalNotificationsBySuppression,
   confirmSessionApprovalForRecentEvents,
   extractCommandApprovalRoots,
+  getCodexApprovalNotifyGraceMs,
   getCodexRequireEscalatedSuppressionReason,
   getSessionRequireEscalatedSuppressionReason,
   handleMcpServerMessage,

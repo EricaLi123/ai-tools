@@ -384,7 +384,7 @@ test("approval terminal resolution falls back to project-dir hwnd when no exact 
   }
 });
 
-test("session watcher recognizes response_item function_call approvals early", () => {
+test("session watcher queues response_item function_call approvals for pending confirmation", () => {
   const event = cli.buildCodexSessionEvent(
     {
       filePath: "C:\\Users\\ericali\\.codex\\sessions\\2026\\03\\20\\rollout-2026-03-20T12-14-50-session-1.jsonl",
@@ -410,7 +410,7 @@ test("session watcher recognizes response_item function_call approvals early", (
   assert(event);
   assert(event.eventName === "PermissionRequest");
   assert(event.eventType === "require_escalated_tool_call");
-  assert(event.approvalDispatch === "immediate");
+  assert(event.approvalDispatch === "pending");
   assert(event.turnId === "turn-1");
   assert(event.dedupeKey === "session-1|exec|turn-1|shell_command:Get-Date");
 });
@@ -576,6 +576,98 @@ test("confirmed session approval suppresses later read-only require_escalated co
       sessionApprovalGrants,
     }) === "session_recent_read_grant"
   );
+});
+
+test("read-only require_escalated commands use a longer pending grace window", () => {
+  const readOnlyGraceMs = cli.getCodexApprovalNotifyGraceMs({
+    eventType: "require_escalated_tool_call",
+    toolArgs: {
+      command: `Get-Content -Path '${path.join(ROOT, "bin", "cli.js")}'`,
+      workdir: ROOT,
+    },
+  });
+  const writeGraceMs = cli.getCodexApprovalNotifyGraceMs({
+    eventType: "require_escalated_tool_call",
+    toolArgs: {
+      command: `node "${path.join(ROOT, "bin", "cli.js")}" --help`,
+      workdir: ROOT,
+    },
+  });
+
+  assert(readOnlyGraceMs > writeGraceMs);
+});
+
+test("confirmation suppressions cancel pending read-only approvals before they emit", () => {
+  const recentRequireEscalatedEvents = new Map();
+  const sessionApprovalGrants = new Map();
+  const pendingApprovalNotifications = new Map();
+  const pendingApprovalCallIds = new Map();
+  const nowMs = 3_000_000;
+  const packageRoot = ROOT;
+
+  cli.rememberRecentRequireEscalatedEvent(
+    recentRequireEscalatedEvents,
+    {
+      dedupeKey: "session-c|exec|turn-c|Get-Content",
+      eventType: "require_escalated_tool_call",
+      projectDir: packageRoot,
+      sessionId: "session-c",
+      toolArgs: {
+        command: `Get-Content -Path '${path.join(packageRoot, "README.md")}'`,
+        workdir: packageRoot,
+      },
+      turnId: "turn-c",
+    },
+    nowMs - 1_000
+  );
+
+  pendingApprovalNotifications.set("pending-read", {
+    dedupeKey: "pending-read",
+    eventType: "require_escalated_tool_call",
+    sessionId: "session-c",
+    toolArgs: {
+      command: `Get-ChildItem '${path.join(packageRoot, "lib")}' -File | Select-Object -ExpandProperty FullName`,
+      workdir: packageRoot,
+    },
+    turnId: "turn-c",
+  });
+  pendingApprovalNotifications.set("pending-write", {
+    dedupeKey: "pending-write",
+    eventType: "require_escalated_tool_call",
+    sessionId: "session-c",
+    toolArgs: {
+      command: `node "${path.join(packageRoot, "bin", "cli.js")}" --help`,
+      workdir: packageRoot,
+    },
+    turnId: "turn-c",
+    callId: "call-write",
+  });
+  pendingApprovalCallIds.set("call-write", "pending-write");
+
+  cli.confirmSessionApprovalForRecentEvents({
+    recentRequireEscalatedEvents,
+    runtime: { log: () => {} },
+    sessionApprovalGrants,
+    sessionId: "session-c",
+    source: "tui_exec_approval",
+    turnId: "turn-c",
+    nowMs,
+  });
+
+  const cancelled = cli.cancelPendingApprovalNotificationsBySuppression({
+    runtime: { log: () => {} },
+    pendingApprovalNotifications,
+    pendingApprovalCallIds,
+    sessionId: "session-c",
+    turnId: "turn-c",
+    nowMs,
+    sessionApprovalGrants,
+  });
+
+  assert(cancelled === 1);
+  assert(!pendingApprovalNotifications.has("pending-read"));
+  assert(pendingApprovalNotifications.has("pending-write"));
+  assert(pendingApprovalCallIds.get("call-write") === "pending-write");
 });
 
 test("session approval suppression does not hide different roots or non-read-only commands", () => {
