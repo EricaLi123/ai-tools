@@ -44,6 +44,10 @@ function read(relPath) {
   return fs.readFileSync(path.join(ROOT, relPath), "utf8");
 }
 
+function normalizeTestPath(value) {
+  return path.resolve(value).replace(/\\/g, "/").toLowerCase();
+}
+
 let canSpawnChildren = true;
 try {
   execFileSync(process.execPath, ["--version"], { stdio: "pipe" });
@@ -498,6 +502,143 @@ test("approved PowerShell command rules suppress prefix_rule-based require_escal
       sandboxPolicy: null,
       approvedCommandRules: rules,
     }) === "approved_rule"
+  );
+});
+
+test("extractCommandApprovalRoots normalizes absolute file, directory, and inline node script roots", () => {
+  const packageRoot = normalizeTestPath(ROOT);
+  const binDir = normalizeTestPath(path.join(ROOT, "bin"));
+  const fileRoots = cli.extractCommandApprovalRoots({
+    command: `Get-Content -Path '${path.join(ROOT, "bin", "cli.js")}'`,
+    workdir: ROOT,
+  });
+  const dirRoots = cli.extractCommandApprovalRoots({
+    command: `Get-ChildItem '${path.join(ROOT, "bin")}' -File | Select-Object -ExpandProperty FullName`,
+    workdir: ROOT,
+  });
+  const inlineNodeRoots = cli.extractCommandApprovalRoots({
+    command:
+      `@'\nconst root = '${ROOT.replace(/\\/g, "/")}';\nwriteAsciiJs(path.join(root, 'bin/cli.js'), 'x');\n'@ | node -`,
+    workdir: ROOT,
+  });
+
+  assert(fileRoots.includes(packageRoot));
+  assert(dirRoots.includes(packageRoot));
+  assert(inlineNodeRoots.includes(packageRoot));
+  assert(!inlineNodeRoots.some((root) => root.includes("@\nconst root")));
+  assert(fileRoots.includes(packageRoot) && !fileRoots.includes(binDir));
+});
+
+test("confirmed session approval suppresses later read-only require_escalated commands in the same root", () => {
+  const recentRequireEscalatedEvents = new Map();
+  const sessionApprovalGrants = new Map();
+  const nowMs = 1_000_000;
+  const packageRoot = ROOT;
+
+  cli.rememberRecentRequireEscalatedEvent(
+    recentRequireEscalatedEvents,
+    {
+      dedupeKey: "session-a|exec|turn-a|Get-Content",
+      eventType: "require_escalated_tool_call",
+      projectDir: packageRoot,
+      sessionId: "session-a",
+      toolArgs: {
+        command: `Get-Content -Path '${path.join(packageRoot, "bin", "cli.js")}'`,
+        workdir: packageRoot,
+      },
+      turnId: "turn-a",
+    },
+    nowMs - 1_000
+  );
+
+  const added = cli.confirmSessionApprovalForRecentEvents({
+    recentRequireEscalatedEvents,
+    runtime: { log: () => {} },
+    sessionApprovalGrants,
+    sessionId: "session-a",
+    source: "approved_rule_saved",
+    turnId: "turn-a",
+    nowMs,
+  });
+
+  assert(added === 1, "expected one confirmed root");
+  assert(
+    cli.getSessionRequireEscalatedSuppressionReason({
+      event: {
+        eventType: "require_escalated_tool_call",
+        sessionId: "session-a",
+        toolArgs: {
+          command: `Get-ChildItem '${path.join(packageRoot, "lib")}' -File | Select-Object -ExpandProperty FullName`,
+          workdir: packageRoot,
+        },
+      },
+      nowMs: nowMs + 500,
+      sessionApprovalGrants,
+    }) === "session_recent_read_grant"
+  );
+});
+
+test("session approval suppression does not hide different roots or non-read-only commands", () => {
+  const recentRequireEscalatedEvents = new Map();
+  const sessionApprovalGrants = new Map();
+  const nowMs = 2_000_000;
+  const packageRoot = ROOT;
+  const otherRoot = "C:\\other-project";
+
+  cli.rememberRecentRequireEscalatedEvent(
+    recentRequireEscalatedEvents,
+    {
+      dedupeKey: "session-b|exec|turn-b|Get-Content",
+      eventType: "require_escalated_tool_call",
+      projectDir: packageRoot,
+      sessionId: "session-b",
+      toolArgs: {
+        command: `Get-Content -Path '${path.join(packageRoot, "README.md")}'`,
+        workdir: packageRoot,
+      },
+      turnId: "turn-b",
+    },
+    nowMs - 1_000
+  );
+
+  cli.confirmSessionApprovalForRecentEvents({
+    recentRequireEscalatedEvents,
+    runtime: { log: () => {} },
+    sessionApprovalGrants,
+    sessionId: "session-b",
+    source: "tui_exec_approval",
+    turnId: "turn-b",
+    nowMs,
+  });
+
+  assert(
+    cli.getSessionRequireEscalatedSuppressionReason({
+      event: {
+        eventType: "require_escalated_tool_call",
+        sessionId: "session-b",
+        toolArgs: {
+          command: `Get-Content -Path '${path.join(otherRoot, "README.md")}'`,
+          workdir: otherRoot,
+        },
+      },
+      nowMs: nowMs + 500,
+      sessionApprovalGrants,
+    }) === ""
+  );
+
+  assert(
+    cli.getSessionRequireEscalatedSuppressionReason({
+      event: {
+        eventType: "require_escalated_tool_call",
+        sessionId: "session-b",
+        toolArgs: {
+          command: `node "${path.join(packageRoot, "bin", "cli.js")}" --help`,
+          workdir: packageRoot,
+        },
+      },
+      nowMs: nowMs + 500,
+      sessionApprovalGrants,
+    }) === ""
   );
 });
 

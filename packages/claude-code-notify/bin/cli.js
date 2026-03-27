@@ -24,6 +24,25 @@ const SIDECAR_SESSION_RESOLUTION_TIMEOUT_MS = 90 * 1000;
 const SIDECAR_SESSION_RESOLUTION_MAX_PAST_MS = 30 * 1000;
 const SIDECAR_SESSION_RESOLUTION_MAX_FUTURE_MS = 10 * 60 * 1000;
 const CODEX_APPROVAL_NOTIFY_GRACE_MS = 1000;
+const RECENT_REQUIRE_ESCALATED_TTL_MS = 30 * 60 * 1000;
+const SESSION_APPROVAL_CONFIRM_LOOKBACK_MS = 5 * 60 * 1000;
+const SESSION_APPROVAL_GRANT_TTL_MS = 30 * 60 * 1000;
+const MAX_RECENT_REQUIRE_ESCALATED_EVENTS_PER_SESSION = 64;
+const MAX_SESSION_APPROVAL_GRANTS_PER_SESSION = 128;
+const COMMAND_APPROVAL_ROOT_MAX_DEPTH = 8;
+const COMMAND_APPROVAL_ROOT_MARKERS = [
+  "package.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod",
+  "pom.xml",
+  "Gemfile",
+  "composer.json",
+  ".git",
+];
 
 if (require.main === module) {
   runCli();
@@ -452,6 +471,8 @@ async function runCodexSessionWatchMode(argv) {
   const fileStates = new Map();
   const sessionProjectDirs = new Map();
   const sessionApprovalContexts = new Map();
+  const sessionApprovalGrants = new Map();
+  const recentRequireEscalatedEvents = new Map();
   const emittedEventKeys = new Map();
   const pendingApprovalNotifications = new Map();
   const pendingApprovalCallIds = new Map();
@@ -535,6 +556,8 @@ async function runCodexSessionWatchMode(argv) {
           emittedEventKeys,
           pendingApprovalNotifications,
           pendingApprovalCallIds,
+          recentRequireEscalatedEvents,
+          sessionApprovalGrants,
           approvedCommandRuleCache,
         });
 
@@ -565,6 +588,8 @@ async function runCodexSessionWatchMode(argv) {
         sessionApprovalContexts,
         pendingApprovalNotifications,
         pendingApprovalCallIds,
+        recentRequireEscalatedEvents,
+        sessionApprovalGrants,
         approvedCommandRuleCache,
       });
 
@@ -1725,6 +1750,8 @@ function consumeSessionFileUpdates(
     emittedEventKeys,
     pendingApprovalNotifications,
     pendingApprovalCallIds,
+    recentRequireEscalatedEvents,
+    sessionApprovalGrants,
     approvedCommandRuleCache,
   }
 ) {
@@ -1757,6 +1784,8 @@ function consumeSessionFileUpdates(
       emittedEventKeys,
       pendingApprovalNotifications,
       pendingApprovalCallIds,
+      recentRequireEscalatedEvents,
+      sessionApprovalGrants,
       approvedCommandRuleCache,
     });
   });
@@ -1799,6 +1828,8 @@ function consumeCodexTuiLogUpdates(
     sessionApprovalContexts,
     pendingApprovalNotifications,
     pendingApprovalCallIds,
+    recentRequireEscalatedEvents,
+    sessionApprovalGrants,
     approvedCommandRuleCache,
   }
 ) {
@@ -1829,6 +1860,8 @@ function consumeCodexTuiLogUpdates(
       sessionApprovalContexts,
       pendingApprovalNotifications,
       pendingApprovalCallIds,
+      recentRequireEscalatedEvents,
+      sessionApprovalGrants,
       approvedCommandRuleCache,
     });
   });
@@ -2127,6 +2160,206 @@ function getCodexRequireEscalatedSuppressionReason({
   return "";
 }
 
+function pruneRecentRequireEscalatedEvents(recentRequireEscalatedEvents, sessionId, nowMs = Date.now()) {
+  if (!recentRequireEscalatedEvents || !sessionId) {
+    return [];
+  }
+
+  const recent = recentRequireEscalatedEvents.get(sessionId);
+  if (!Array.isArray(recent) || !recent.length) {
+    recentRequireEscalatedEvents.delete(sessionId);
+    return [];
+  }
+
+  const next = recent.filter(
+    (item) => item && typeof item.seenAtMs === "number" && item.seenAtMs + RECENT_REQUIRE_ESCALATED_TTL_MS >= nowMs
+  );
+  if (next.length) {
+    recentRequireEscalatedEvents.set(sessionId, next);
+  } else {
+    recentRequireEscalatedEvents.delete(sessionId);
+  }
+
+  return next;
+}
+
+function rememberRecentRequireEscalatedEvent(recentRequireEscalatedEvents, event, nowMs = Date.now()) {
+  if (
+    !recentRequireEscalatedEvents ||
+    !event ||
+    event.eventType !== "require_escalated_tool_call" ||
+    !event.sessionId ||
+    !event.toolArgs
+  ) {
+    return;
+  }
+
+  const sessionId = event.sessionId;
+  const recent = pruneRecentRequireEscalatedEvents(recentRequireEscalatedEvents, sessionId, nowMs).filter(
+    (item) => item.dedupeKey !== event.dedupeKey
+  );
+
+  recent.push({
+    dedupeKey: event.dedupeKey || "",
+    projectDir: event.projectDir || "",
+    sessionId,
+    seenAtMs: nowMs,
+    toolArgs: event.toolArgs,
+    turnId: event.turnId || "",
+  });
+
+  while (recent.length > MAX_RECENT_REQUIRE_ESCALATED_EVENTS_PER_SESSION) {
+    recent.shift();
+  }
+
+  recentRequireEscalatedEvents.set(sessionId, recent);
+}
+
+function pruneSessionApprovalGrants(sessionApprovalGrants, sessionId, nowMs = Date.now()) {
+  if (!sessionApprovalGrants || !sessionId) {
+    return [];
+  }
+
+  const grants = sessionApprovalGrants.get(sessionId);
+  if (!Array.isArray(grants) || !grants.length) {
+    sessionApprovalGrants.delete(sessionId);
+    return [];
+  }
+
+  const next = grants.filter(
+    (item) => item && typeof item.confirmedAtMs === "number" && item.confirmedAtMs + SESSION_APPROVAL_GRANT_TTL_MS >= nowMs
+  );
+  if (next.length) {
+    sessionApprovalGrants.set(sessionId, next);
+  } else {
+    sessionApprovalGrants.delete(sessionId);
+  }
+
+  return next;
+}
+
+function rememberSessionApprovalRoots(
+  sessionApprovalGrants,
+  sessionId,
+  roots,
+  { confirmedAtMs = Date.now(), source = "", turnId = "" } = {}
+) {
+  if (!sessionApprovalGrants || !sessionId || !Array.isArray(roots) || !roots.length) {
+    return 0;
+  }
+
+  const grants = pruneSessionApprovalGrants(sessionApprovalGrants, sessionId, confirmedAtMs);
+  let added = 0;
+
+  roots.forEach((root) => {
+    const normalizedRoot = normalizeShellCommandPath(root);
+    if (!normalizedRoot) {
+      return;
+    }
+
+    const existing = grants.find((item) => item.root === normalizedRoot);
+    if (existing) {
+      existing.confirmedAtMs = confirmedAtMs;
+      existing.source = source || existing.source || "";
+      existing.turnId = turnId || existing.turnId || "";
+      return;
+    }
+
+    grants.push({
+      confirmedAtMs,
+      root: normalizedRoot,
+      source,
+      turnId,
+    });
+    added += 1;
+  });
+
+  while (grants.length > MAX_SESSION_APPROVAL_GRANTS_PER_SESSION) {
+    grants.shift();
+  }
+
+  if (grants.length) {
+    sessionApprovalGrants.set(sessionId, grants);
+  }
+
+  return added;
+}
+
+function confirmSessionApprovalForRecentEvents({
+  recentRequireEscalatedEvents,
+  runtime,
+  sessionApprovalGrants,
+  sessionId,
+  source,
+  turnId,
+  nowMs = Date.now(),
+}) {
+  if (!sessionId || !recentRequireEscalatedEvents || !sessionApprovalGrants) {
+    return 0;
+  }
+
+  const recent = pruneRecentRequireEscalatedEvents(recentRequireEscalatedEvents, sessionId, nowMs);
+  if (!recent.length) {
+    return 0;
+  }
+
+  const roots = Array.from(
+    new Set(
+      recent
+        .filter(
+          (item) =>
+            item &&
+            item.seenAtMs + SESSION_APPROVAL_CONFIRM_LOOKBACK_MS >= nowMs &&
+            (!turnId || !item.turnId || item.turnId === turnId)
+        )
+        .flatMap((item) => extractCommandApprovalRoots(item.toolArgs))
+    )
+  );
+
+  const added = rememberSessionApprovalRoots(sessionApprovalGrants, sessionId, roots, {
+    confirmedAtMs: nowMs,
+    source,
+    turnId,
+  });
+
+  if (added > 0 && runtime && typeof runtime.log === "function") {
+    runtime.log(
+      `confirmed session approval sessionId=${sessionId} turnId=${turnId || ""} source=${source || ""} roots=${roots.join(";")}`
+    );
+  }
+
+  return added;
+}
+
+function getSessionRequireEscalatedSuppressionReason({
+  event,
+  nowMs = Date.now(),
+  sessionApprovalGrants,
+}) {
+  if (
+    !event ||
+    event.eventType !== "require_escalated_tool_call" ||
+    !event.sessionId ||
+    !event.toolArgs ||
+    !isLikelyReadOnlyShellCommand(event.toolArgs)
+  ) {
+    return "";
+  }
+
+  const grants = pruneSessionApprovalGrants(sessionApprovalGrants, event.sessionId, nowMs);
+  if (!grants.length) {
+    return "";
+  }
+
+  const roots = extractCommandApprovalRoots(event.toolArgs);
+  if (!roots.length) {
+    return "";
+  }
+
+  const matched = roots.some((root) => grants.some((grant) => isPathWithinRoot(root, grant.root)));
+  return matched ? "session_recent_read_grant" : "";
+}
+
 function matchesApprovedCommandRule(args, approvedCommandRules) {
   if (!args || !Array.isArray(approvedCommandRules) || !approvedCommandRules.length) {
     return false;
@@ -2166,6 +2399,98 @@ function normalizePrefixRule(prefixRule) {
     .filter((value) => typeof value === "string")
     .map((value) => stripMatchingQuotes(String(value).trim()).toLowerCase())
     .filter(Boolean);
+}
+
+function isLikelyReadOnlyShellCommand(args) {
+  if (!args || typeof args.command !== "string") {
+    return false;
+  }
+
+  const tokens = extractLeadingCommandTokens(args.command);
+  if (!tokens.length) {
+    return false;
+  }
+
+  const command = tokens[0];
+  if (
+    new Set([
+      "cat",
+      "dir",
+      "findstr",
+      "get-childitem",
+      "get-content",
+      "ls",
+      "rg",
+      "select-string",
+      "type",
+    ]).has(command)
+  ) {
+    return true;
+  }
+
+  if (command === "git") {
+    return new Set(["branch", "diff", "log", "remote", "rev-parse", "show", "status"]).has(tokens[1] || "");
+  }
+
+  if (command === "node") {
+    return tokens[1] === "-c";
+  }
+
+  return false;
+}
+
+function extractCommandApprovalRoots(args) {
+  if (!args || typeof args.command !== "string") {
+    return [];
+  }
+
+  const workdir = normalizeShellCommandPath(args.workdir);
+  const roots = new Set();
+  const absolutePathPattern = /[A-Za-z]:[\\/][^"'`\r\n|;]+/g;
+
+  const pushRoot = (value) => {
+    const normalized = normalizeShellCommandPath(value);
+    if (!normalized) {
+      return;
+    }
+
+    let root = normalized;
+    const fsPath = normalized.replace(/\//g, path.sep);
+    if (path.extname(fsPath)) {
+      root = normalizeShellCommandPath(findCommandApprovalRootPath(path.dirname(fsPath)));
+    } else {
+      root = normalizeShellCommandPath(findCommandApprovalRootPath(fsPath));
+    }
+
+    if (root) {
+      roots.add(root);
+    }
+  };
+
+  let match;
+  while ((match = absolutePathPattern.exec(args.command)) !== null) {
+    pushRoot(match[0]);
+  }
+
+  tokenizeShellCommand(args.command).forEach((token) => {
+    const candidate = normalizePathCandidate(token);
+    if (!candidate) {
+      return;
+    }
+
+    if (isWindowsAbsolutePath(candidate)) {
+      pushRoot(candidate);
+      return;
+    }
+
+    if (!workdir || !looksLikeRelativePathCandidate(candidate)) {
+      return;
+    }
+
+    pushRoot(path.resolve(workdir.replace(/\//g, path.sep), candidate));
+  });
+
+  return Array.from(roots);
 }
 
 function extractLeadingCommandTokens(command) {
@@ -2267,6 +2592,88 @@ function looksLikePowerShellAssignment(token) {
   return /^\$[A-Za-z_][A-Za-z0-9_:.]*=/.test(String(token || ""));
 }
 
+function normalizePathCandidate(value) {
+  return stripMatchingQuotes(String(value || "").trim())
+    .replace(/^[([{]+/, "")
+    .replace(/[)\],;]+$/, "");
+}
+
+function isWindowsAbsolutePath(value) {
+  return /^[A-Za-z]:[\\/]/.test(String(value || ""));
+}
+
+function looksLikeRelativePathCandidate(value) {
+  const text = String(value || "");
+  if (!text || /^[A-Za-z]:[\\/]/.test(text) || /^[A-Za-z]+:\/\//.test(text) || text.startsWith("$")) {
+    return false;
+  }
+
+  return text.startsWith(".") || /[\\/]/.test(text);
+}
+
+function normalizeShellCommandPath(value) {
+  const candidate = normalizePathCandidate(value);
+  if (!isWindowsAbsolutePath(candidate)) {
+    return "";
+  }
+
+  let normalized = candidate.replace(/\\/g, "/");
+  if (normalized.length > 3) {
+    normalized = normalized.replace(/\/+$/, "");
+  }
+  return normalized.toLowerCase();
+}
+
+function isPathWithinRoot(candidatePath, rootPath) {
+  const candidate = normalizeShellCommandPath(candidatePath);
+  const root = normalizeShellCommandPath(rootPath);
+  if (!candidate || !root) {
+    return false;
+  }
+
+  return candidate === root || candidate.startsWith(`${root}/`);
+}
+
+function findCommandApprovalRootPath(value) {
+  let currentPath = "";
+  try {
+    currentPath = path.resolve(String(value || ""));
+  } catch {
+    return String(value || "");
+  }
+
+  let bestGitRoot = "";
+  let currentDir = currentPath;
+
+  for (let depth = 0; depth <= COMMAND_APPROVAL_ROOT_MAX_DEPTH; depth += 1) {
+    const marker = findCommandApprovalRootMarker(currentDir);
+    if (marker && marker !== ".git") {
+      return currentDir;
+    }
+    if (marker === ".git" && !bestGitRoot) {
+      bestGitRoot = currentDir;
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (!parentDir || parentDir === currentDir) {
+      break;
+    }
+    currentDir = parentDir;
+  }
+
+  return bestGitRoot || currentPath;
+}
+
+function findCommandApprovalRootMarker(dirPath) {
+  if (!dirPath) {
+    return "";
+  }
+
+  return COMMAND_APPROVAL_ROOT_MARKERS.find((marker) =>
+    fs.existsSync(path.join(dirPath, marker))
+  ) || "";
+}
+
 function normalizeShellToken(token) {
   return stripMatchingQuotes(String(token || "").trim()).toLowerCase();
 }
@@ -2310,6 +2717,8 @@ function handleSessionRecord(
     emittedEventKeys,
     pendingApprovalNotifications,
     pendingApprovalCallIds,
+    recentRequireEscalatedEvents,
+    sessionApprovalGrants,
     approvedCommandRuleCache,
   }
 ) {
@@ -2363,6 +2772,18 @@ function handleSessionRecord(
     return;
   }
 
+  if (isApprovedCommandRuleSavedRecord(record)) {
+    confirmSessionApprovalForRecentEvents({
+      recentRequireEscalatedEvents,
+      runtime,
+      sessionApprovalGrants,
+      sessionId: state.sessionId || parseSessionIdFromRolloutPath(state.filePath) || "",
+      source: "approved_rule_saved",
+      turnId: state.turnId || "",
+    });
+    return;
+  }
+
   if (
     (record.type !== "event_msg" && record.type !== "response_item") ||
     !record.payload ||
@@ -2390,6 +2811,19 @@ function handleSessionRecord(
       );
       return;
     }
+
+    const sessionSuppressionReason = getSessionRequireEscalatedSuppressionReason({
+      event,
+      sessionApprovalGrants,
+    });
+    if (sessionSuppressionReason) {
+      runtime.log(
+        `suppressed session require_escalated sessionId=${event.sessionId || "unknown"} turnId=${event.turnId || ""} reason=${sessionSuppressionReason}`
+      );
+      return;
+    }
+
+    rememberRecentRequireEscalatedEvent(recentRequireEscalatedEvents, event);
 
     if (event.approvalDispatch === "immediate") {
       emitCodexApprovalNotification({
@@ -2432,10 +2866,24 @@ function handleCodexTuiLogLine(
     sessionApprovalContexts,
     pendingApprovalNotifications,
     pendingApprovalCallIds,
+    recentRequireEscalatedEvents,
+    sessionApprovalGrants,
     approvedCommandRuleCache,
   }
 ) {
   if (!line || !line.trim()) {
+    return;
+  }
+
+  const confirmation = parseCodexTuiApprovalConfirmation(line);
+  if (confirmation) {
+    confirmSessionApprovalForRecentEvents({
+      recentRequireEscalatedEvents,
+      runtime,
+      sessionApprovalGrants,
+      sessionId: confirmation.sessionId,
+      source: confirmation.source,
+    });
     return;
   }
 
@@ -2461,6 +2909,19 @@ function handleCodexTuiLogLine(
     );
     return;
   }
+
+  const sessionSuppressionReason = getSessionRequireEscalatedSuppressionReason({
+    event,
+    sessionApprovalGrants,
+  });
+  if (sessionSuppressionReason) {
+    runtime.log(
+      `suppressed tui require_escalated sessionId=${event.sessionId || "unknown"} turnId=${event.turnId || ""} reason=${sessionSuppressionReason}`
+    );
+    return;
+  }
+
+  rememberRecentRequireEscalatedEvent(recentRequireEscalatedEvents, event);
 
   queuePendingApprovalNotification({
     runtime,
@@ -2611,6 +3072,52 @@ function buildCodexTuiApprovalEvent(tuiState, line, { sessionProjectDirs, sessio
       descriptor,
     }),
   };
+}
+
+function parseCodexTuiApprovalConfirmation(line) {
+  if (!line || !line.includes("thread_id=")) {
+    return null;
+  }
+
+  let source = "";
+  if (line.includes('otel.name="op.dispatch.exec_approval"')) {
+    source = "tui_exec_approval";
+  } else if (line.includes('otel.name="op.dispatch.patch_approval"')) {
+    source = "tui_patch_approval";
+  } else {
+    return null;
+  }
+
+  const match = line.match(/thread_id=([^}:]+)/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    sessionId: match[1],
+    source,
+  };
+}
+
+function isApprovedCommandRuleSavedRecord(record) {
+  if (
+    !record ||
+    record.type !== "response_item" ||
+    !record.payload ||
+    record.payload.type !== "message" ||
+    record.payload.role !== "developer" ||
+    !Array.isArray(record.payload.content)
+  ) {
+    return false;
+  }
+
+  return record.payload.content.some(
+    (item) =>
+      item &&
+      item.type === "input_text" &&
+      typeof item.text === "string" &&
+      item.text.startsWith("Approved command prefix saved:")
+  );
 }
 
 function shouldEmitEventKey(emittedEventKeys, eventKey) {
@@ -2936,9 +3443,14 @@ module.exports = {
   buildCodexTuiApprovalEvent,
   buildApprovalDedupeKey,
   buildCodexSessionWatchAutostartCommand,
+  confirmSessionApprovalForRecentEvents,
+  extractCommandApprovalRoots,
   getCodexRequireEscalatedSuppressionReason,
+  getSessionRequireEscalatedSuppressionReason,
   handleMcpServerMessage,
+  isLikelyReadOnlyShellCommand,
   matchesApprovedCommandRule,
+  rememberRecentRequireEscalatedEvent,
   getCodexExecApprovalDescriptor,
   parseApprovedCommandRules,
   parseJsonObjectMaybe,
