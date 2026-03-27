@@ -7,9 +7,10 @@ const CODEX_EVENT_NAME_BY_TYPE = {
   "request-permissions": "PermissionRequest",
   "apply-patch-approval-request": "PermissionRequest",
 };
+const ENV_PAYLOAD_KEYS = ["CLAUDE_CODE_NOTIFY_PAYLOAD"];
 
 function normalizeIncomingNotification({ argv = [], stdinData = "", env = {} } = {}) {
-  const candidates = getIncomingPayloadCandidates(argv, stdinData);
+  const candidates = getIncomingPayloadCandidates(argv, stdinData, env);
   const explicitOverrides = getExplicitDisplayOverrides(env);
 
   for (const candidate of candidates) {
@@ -36,7 +37,7 @@ function normalizeIncomingNotification({ argv = [], stdinData = "", env = {} } =
   );
 }
 
-function getIncomingPayloadCandidates(argv, stdinData) {
+function getIncomingPayloadCandidates(argv, stdinData, env) {
   const candidates = [];
 
   pushPayloadCandidate(candidates, {
@@ -44,6 +45,14 @@ function getIncomingPayloadCandidates(argv, stdinData) {
     raw: stdinData,
     acceptNonJson: true,
   });
+
+  for (const envKey of ENV_PAYLOAD_KEYS) {
+    pushPayloadCandidate(candidates, {
+      transport: `env:${envKey}`,
+      raw: env && typeof env === "object" ? env[envKey] : "",
+      acceptNonJson: false,
+    });
+  }
 
   for (let index = argv.length - 1; index >= 0; index -= 1) {
     pushPayloadCandidate(candidates, {

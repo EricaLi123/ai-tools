@@ -5,6 +5,7 @@ if (process.platform !== "win32") {
 }
 
 const { execFileSync } = require("child_process");
+const fs = require("fs");
 const path = require("path");
 
 const tasks = [
@@ -30,4 +31,24 @@ for (const task of tasks) {
   } catch {
     console.warn(task.warning);
   }
+}
+
+try {
+  installCodexNotifyWrapper();
+} catch {
+  console.warn("claude-code-notify: Codex wrapper install skipped (non-fatal)");
+}
+
+function installCodexNotifyWrapper() {
+  const localAppData = process.env.LOCALAPPDATA;
+  if (!localAppData) {
+    throw new Error("LOCALAPPDATA is not set");
+  }
+
+  const targetDir = path.join(localAppData, "claude-code-notify");
+  const sourcePath = path.join(__dirname, "scripts", "codex-notify-wrapper.vbs");
+  const targetPath = path.join(targetDir, "codex-notify-wrapper.vbs");
+
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.copyFileSync(sourcePath, targetPath);
 }

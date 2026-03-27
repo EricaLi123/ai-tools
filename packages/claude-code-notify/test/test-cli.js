@@ -10,6 +10,7 @@ const path = require("path");
 const ROOT = path.join(__dirname, "..");
 const cli = require(path.join(ROOT, "bin", "cli.js"));
 const { normalizeIncomingNotification } = require(path.join(ROOT, "lib", "notification-sources.js"));
+const sidecarState = require(path.join(ROOT, "lib", "codex-sidecar-state.js"));
 
 let passed = 0;
 let failed = 0;
@@ -58,12 +59,15 @@ console.log("\n--- File structure ---");
 
 [
   "bin/cli.js",
+  "lib/codex-sidecar-state.js",
   "lib/notification-sources.js",
   "postinstall.js",
   "scripts/find-hwnd.ps1",
   "scripts/get-shell-pid.ps1",
+  "scripts/codex-notify-wrapper.vbs",
   "scripts/notify.ps1",
   "scripts/register-protocol.ps1",
+  "scripts/start-hidden.vbs",
   "scripts/start-tab-color-watcher.ps1",
   "scripts/tab-color-watcher.ps1",
 ].forEach((relPath) => {
@@ -92,7 +96,9 @@ console.log("\n--- Content checks ---");
 
 const cliContent = read("bin/cli.js");
 const notifyContent = read("scripts/notify.ps1");
+const codexWrapperContent = read("scripts/codex-notify-wrapper.vbs");
 const postinstallContent = read("postinstall.js");
+const startHiddenContent = read("scripts/start-hidden.vbs");
 const watcherContent = read("scripts/tab-color-watcher.ps1");
 test("cli.js resolves hwnd, shell pid, and spawns watcher through launcher", () => {
   assert(cliContent.includes("find-hwnd.ps1"));
@@ -114,6 +120,7 @@ test("cli.js includes codex watcher mode", () => {
 
 test("cli.js includes codex session watcher mode", () => {
   assert(cliContent.includes("codex-session-watch"));
+  assert(cliContent.includes("autostart"));
   assert(cliContent.includes("exec_approval_request"));
   assert(cliContent.includes("request_permissions"));
   assert(cliContent.includes("apply_patch_approval_request"));
@@ -122,6 +129,255 @@ test("cli.js includes codex session watcher mode", () => {
   assert(cliContent.includes('"sandbox_permissions":"require_escalated"'));
   assert(!cliContent.includes("apply_patch_outside_workspace"));
   assert(cliContent.includes("sessionsDir"));
+  assert(cliContent.includes('acquireSingleInstanceLock("codex-session-watch"'));
+  assert(cliContent.includes("start-hidden.vbs"));
+});
+
+test("cli.js includes codex mcp sidecar mode", () => {
+  assert(cliContent.includes("codex-mcp-sidecar"));
+  assert(cliContent.includes("Run a minimal MCP sidecar"));
+  assert(cliContent.includes("ensureCodexSessionWatchRunning"));
+  assert(cliContent.includes("codex-session-watch already running"));
+  assert(cliContent.includes('case "initialize"'));
+  assert(cliContent.includes('case "tools/list"'));
+  assert(cliContent.includes('case "resources/list"'));
+  assert(cliContent.includes('case "prompts/list"'));
+});
+
+test("autostart command builder targets hidden vbs launcher", () => {
+  const command = cli.buildCodexSessionWatchAutostartCommand(["--poll-ms", "2000"]);
+  assert(command.includes("start-hidden.vbs"));
+  assert(command.includes("codex-session-watch"));
+  assert(command.includes("--poll-ms"));
+  assert(command.includes("2000"));
+});
+
+test("sidecar candidate picker prefers the closest unambiguous rollout", () => {
+  const candidate = cli.pickSidecarSessionCandidate([
+    {
+      sessionId: "session-a",
+      filePath: "rollout-a.jsonl",
+      score: 2000,
+      referenceStartedAtMs: 2000,
+    },
+    {
+      sessionId: "session-b",
+      filePath: "rollout-b.jsonl",
+      score: 12000,
+      referenceStartedAtMs: 12000,
+    },
+  ]);
+
+  assert(candidate);
+  assert(candidate.sessionId === "session-a");
+});
+
+test("sidecar candidate picker rejects ambiguous close matches", () => {
+  const candidate = cli.pickSidecarSessionCandidate([
+    {
+      sessionId: "session-a",
+      filePath: "rollout-a.jsonl",
+      score: 2000,
+      referenceStartedAtMs: 2000,
+    },
+    {
+      sessionId: "session-b",
+      filePath: "rollout-b.jsonl",
+      score: 3500,
+      referenceStartedAtMs: 3500,
+    },
+  ]);
+
+  assert(candidate === null);
+});
+
+test("sidecar candidate picker prefers future rollout when scores tie", () => {
+  const candidate = cli.pickSidecarSessionCandidate([
+    {
+      sessionId: "session-past",
+      filePath: "rollout-past.jsonl",
+      score: 2000,
+      referenceStartedAtMs: 1000,
+      isFutureMatch: false,
+    },
+    {
+      sessionId: "session-future",
+      filePath: "rollout-future.jsonl",
+      score: 2000,
+      referenceStartedAtMs: 1500,
+      isFutureMatch: true,
+    },
+  ]);
+
+  assert(candidate);
+  assert(candidate.sessionId === "session-future");
+});
+
+test("sidecar resolver can match a resumed old rollout using recent activity time", () => {
+  const fixtureRoot = path.join(ROOT, `.tmp-sidecar-resume-${Date.now()}`);
+  const sessionsDir = path.join(fixtureRoot, "2026", "03", "20");
+  const rolloutPath = path.join(
+    sessionsDir,
+    "rollout-2026-03-20T13-51-32-session-resume-test.jsonl"
+  );
+  const recentIso = new Date().toISOString();
+
+  try {
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    fs.writeFileSync(
+      rolloutPath,
+      [
+        JSON.stringify({
+          timestamp: "2026-03-20T13:51:32.000Z",
+          type: "session_meta",
+          payload: {
+            id: "session-resume-test",
+            cwd: "D:\\XAGIT\\leyserkids",
+          },
+        }),
+        JSON.stringify({
+          timestamp: recentIso,
+          type: "turn_context",
+          payload: {
+            cwd: "D:\\XAGIT\\leyserkids",
+          },
+        }),
+      ].join("\n"),
+      "utf8"
+    );
+
+    const candidate = cli.resolveSidecarSessionCandidate({
+      cwd: "D:\\XAGIT\\leyserkids",
+      sessionsDir: fixtureRoot,
+      startedAtMs: Date.parse(recentIso),
+      log: () => {},
+    });
+
+    assert(candidate, "expected a resolved sidecar candidate");
+    assert(candidate.sessionId === "session-resume-test");
+    assert(candidate.referenceKind === "latest_event");
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("mcp sidecar writes JSON-RPC responses", () => {
+  const writes = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => {
+    writes.push(String(chunk));
+    return true;
+  };
+
+  try {
+    cli.handleMcpServerMessage({ id: "req-1", method: "ping" }, () => {});
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+
+  assert(writes.length === 1);
+  const payload = JSON.parse(writes[0]);
+  assert(payload.jsonrpc === "2.0");
+  assert(payload.id === "req-1");
+  assert(payload.result && typeof payload.result === "object");
+  assert(Object.keys(payload.result).length === 0);
+});
+
+test("sidecar state lookup returns exact session mappings after sidecar exit", () => {
+  const recordId = `test-sidecar-${process.pid}-${Date.now()}`;
+  const sessionId = `test-session-${Date.now()}`;
+
+  try {
+    sidecarState.writeSidecarRecord({
+      recordId,
+      pid: 999999,
+      parentPid: process.ppid,
+      cwd: "D:\\XAGIT\\claude-code-tools",
+      sessionId,
+      startedAt: new Date().toISOString(),
+      resolvedAt: new Date().toISOString(),
+      hwnd: 1234,
+      shellPid: 5678,
+      isWindowsTerminal: true,
+    });
+
+    const terminal = sidecarState.findSidecarTerminalContextForSession(sessionId);
+    assert(terminal);
+    assert(terminal.sessionId === sessionId);
+    assert(terminal.hwnd === 1234);
+    assert(terminal.shellPid === 5678);
+    assert(terminal.isWindowsTerminal === true);
+  } finally {
+    sidecarState.deleteSidecarRecord(recordId);
+  }
+});
+
+test("sidecar prune keeps fresh resolved records even when the sidecar pid is gone", () => {
+  const recordId = `test-sidecar-fresh-${process.pid}-${Date.now()}`;
+  const sessionId = `test-session-fresh-${Date.now()}`;
+
+  try {
+    sidecarState.writeSidecarRecord({
+      recordId,
+      pid: 999999,
+      parentPid: process.ppid,
+      cwd: "D:\\XAGIT\\claude-code-tools",
+      sessionId,
+      startedAt: new Date().toISOString(),
+      resolvedAt: new Date().toISOString(),
+      hwnd: 4321,
+      shellPid: 8765,
+      isWindowsTerminal: true,
+    });
+
+    sidecarState.pruneStaleSidecarRecords();
+
+    const terminal = sidecarState.findSidecarTerminalContextForSession(sessionId);
+    assert(terminal);
+    assert(terminal.hwnd === 4321);
+    assert(terminal.shellPid === 8765);
+  } finally {
+    sidecarState.deleteSidecarRecord(recordId);
+  }
+});
+
+test("approval terminal resolution falls back to project-dir hwnd when no exact session mapping exists", () => {
+  const recordId = `test-sidecar-project-${process.pid}-${Date.now()}`;
+  const projectDir = path.join(ROOT, `.tmp-sidecar-project-${Date.now()}`);
+  const recordCwd = path.join(projectDir, "subdir");
+
+  try {
+    sidecarState.writeSidecarRecord({
+      recordId,
+      pid: process.pid,
+      parentPid: process.ppid,
+      cwd: recordCwd,
+      sessionId: "",
+      startedAt: new Date().toISOString(),
+      resolvedAt: "",
+      hwnd: 2468,
+      shellPid: 1357,
+      isWindowsTerminal: true,
+    });
+
+    const terminal = cli.resolveApprovalTerminalContext({
+      sessionId: `missing-session-${Date.now()}`,
+      projectDir,
+      fallbackTerminal: {
+        hwnd: null,
+        shellPid: null,
+        isWindowsTerminal: false,
+      },
+      log: () => {},
+    });
+
+    assert(terminal);
+    assert(terminal.hwnd === 2468);
+    assert(terminal.shellPid === null);
+    assert(terminal.isWindowsTerminal === false);
+  } finally {
+    sidecarState.deleteSidecarRecord(recordId);
+  }
 });
 
 test("session watcher recognizes response_item function_call approvals early", () => {
@@ -150,6 +406,7 @@ test("session watcher recognizes response_item function_call approvals early", (
   assert(event);
   assert(event.eventName === "PermissionRequest");
   assert(event.eventType === "require_escalated_tool_call");
+  assert(event.approvalDispatch === "immediate");
   assert(event.turnId === "turn-1");
   assert(event.dedupeKey === "session-1|exec|turn-1|shell_command:Get-Date");
 });
@@ -185,13 +442,97 @@ test("tui watcher recognizes shell approvals from ToolCall lines instead of exec
     '2026-03-20T04:15:29.835774Z  INFO session_loop{thread_id=session-3}:submission_dispatch{otel.name="op.dispatch.user_turn" submission.id="submission-3" codex.op="user_turn"}:turn{otel.name="session_task.turn" thread.id=session-3 turn.id=turn-3 model=gpt-5.4}: codex_core::stream_events_utils: ToolCall: shell_command {"command":"Get-Date","sandbox_permissions":"require_escalated","workdir":"C:\\\\Users\\\\ericali"} thread_id=session-3',
     {
       sessionProjectDirs: new Map([["session-3", "C:\\Users\\ericali"]]),
-      sessionWritableRoots: new Map(),
+      sessionApprovalContexts: new Map(),
     }
   );
 
   assert(event);
   assert(event.eventType === "require_escalated_tool_call");
+  assert(event.approvalDispatch === "pending");
   assert(event.dedupeKey === "session-3|exec|turn-3|shell_command:Get-Date");
+});
+
+test("approved PowerShell command rules suppress exact require_escalated shell commands", () => {
+  const rules = cli.parseApprovedCommandRules(
+    'prefix_rule(pattern=["C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe", "-Command", "rg -n \\"model|openrouter|provider|apiKey|baseUrl|llm\\" \\"D:\\\\XAGIT\\\\kids-tools\\\\apps\\\\ai-ui-case-runner\\""], decision="allow")'
+  );
+
+  assert(rules.length === 1, "expected one parsed approved rule");
+  assert(
+    cli.getCodexRequireEscalatedSuppressionReason({
+      event: {
+        eventType: "require_escalated_tool_call",
+        toolArgs: {
+          command: 'rg -n "model|openrouter|provider|apiKey|baseUrl|llm" "D:\\XAGIT\\kids-tools\\apps\\ai-ui-case-runner"',
+        },
+      },
+      approvalPolicy: "",
+      sandboxPolicy: null,
+      approvedCommandRules: rules,
+    }) === "approved_rule"
+  );
+});
+
+test("approved PowerShell command rules suppress prefix_rule-based require_escalated shell commands", () => {
+  const rules = cli.parseApprovedCommandRules(
+    'prefix_rule(pattern=["C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe", "-Command", "Get-ChildItem -Recurse -File \\"D:\\\\XAGIT\\\\kids-tools\\\\apps\\\\ai-ui-case-runner\\" | Select-Object -ExpandProperty FullName"], decision="allow")'
+  );
+
+  assert(rules.length === 1, "expected one parsed approved rule");
+  assert(
+    cli.getCodexRequireEscalatedSuppressionReason({
+      event: {
+        eventType: "require_escalated_tool_call",
+        toolArgs: {
+          command:
+            'Get-ChildItem -Recurse -File "D:\\XAGIT\\kids-tools\\apps\\ai-ui-case-runner" | Select-Object -ExpandProperty FullName',
+          prefix_rule: [
+            "Get-ChildItem",
+            "-Recurse",
+            "-File",
+            "D:\\XAGIT\\kids-tools\\apps\\ai-ui-case-runner",
+          ],
+        },
+      },
+      approvalPolicy: "",
+      sandboxPolicy: null,
+      approvedCommandRules: rules,
+    }) === "approved_rule"
+  );
+});
+
+test("approval_policy=never suppresses require_escalated approval notifications", () => {
+  assert(
+    cli.getCodexRequireEscalatedSuppressionReason({
+      event: {
+        eventType: "require_escalated_tool_call",
+        toolArgs: {
+          command: "Get-Date",
+        },
+      },
+      approvalPolicy: "never",
+      sandboxPolicy: null,
+      approvedCommandRules: [],
+    }) === "approval_policy_never"
+  );
+});
+
+test("danger-full-access suppresses require_escalated approval notifications", () => {
+  assert(
+    cli.getCodexRequireEscalatedSuppressionReason({
+      event: {
+        eventType: "require_escalated_tool_call",
+        toolArgs: {
+          command: "Get-Date",
+        },
+      },
+      approvalPolicy: "",
+      sandboxPolicy: {
+        type: "danger-full-access",
+      },
+      approvedCommandRules: [],
+    }) === "danger_full_access"
+  );
 });
 
 test("session watcher recognizes explicit apply_patch approval events from rollout JSONL", () => {
@@ -294,6 +635,28 @@ test("notification source normalizer recognizes Codex legacy notify argv payload
   assert(normalized.projectDir === "D:\\XAGIT\\claude-code-tools");
 });
 
+test("notification source normalizer recognizes wrapper env payloads", () => {
+  const normalized = normalizeIncomingNotification({
+    argv: [],
+    stdinData: "",
+    env: {
+      CLAUDE_CODE_NOTIFY_PAYLOAD: JSON.stringify({
+        type: "agent-turn-complete",
+        "thread-id": "thread-env-1",
+        "turn-id": "turn-env-1",
+        cwd: "D:\\XAGIT\\claude-code-tools",
+        client: "codex-tui",
+      }),
+    },
+  });
+
+  assert(normalized.sourceId === "codex-legacy-notify");
+  assert(normalized.transport === "env:CLAUDE_CODE_NOTIFY_PAYLOAD");
+  assert(normalized.eventName === "Stop");
+  assert(normalized.sessionId === "thread-env-1");
+  assert(normalized.turnId === "turn-env-1");
+});
+
 test("notification source normalizer respects explicit source title and message", () => {
   const normalized = normalizeIncomingNotification({
     argv: [],
@@ -341,6 +704,24 @@ test("postinstall registers protocol", () => {
   assert(postinstallContent.includes("register-protocol.ps1"));
 });
 
+test("postinstall installs the codex wrapper into LOCALAPPDATA", () => {
+  assert(postinstallContent.includes("installCodexNotifyWrapper"));
+  assert(postinstallContent.includes("codex-notify-wrapper.vbs"));
+  assert(postinstallContent.includes("LOCALAPPDATA"));
+});
+
+test("start-hidden.vbs runs argv command hidden", () => {
+  assert(startHiddenContent.includes("shell.Run command, 0, False"));
+  assert(startHiddenContent.includes("WScript.Arguments.Count"));
+});
+
+test("codex wrapper forwards payload through env and then calls the installed shim", () => {
+  assert(codexWrapperContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
+  assert(codexWrapperContent.includes("claude-code-notify.cmd"));
+  assert(codexWrapperContent.includes('%ComSpec%'));
+  assert(codexWrapperContent.includes("shell.Run"));
+});
+
 test("watcher resets through console attachment plus standard streams", () => {
   assert(watcherContent.includes("Write-OscToInheritedStreams"));
   assert(watcherContent.includes("Write-OscToAttachedConsole"));
@@ -361,11 +742,19 @@ test("README documents codex watcher usage", () => {
 test("README documents codex session watcher usage", () => {
   const readmeContent = read("README.md");
   assert(readmeContent.includes("codex-session-watch"));
+  assert(readmeContent.includes("auto-start it in the background"));
+  assert(readmeContent.includes("autostart enable"));
+  assert(readmeContent.includes("autostart status"));
   assert(readmeContent.includes("response_item"));
+  assert(readmeContent.includes("response_item.function_call"));
   assert(readmeContent.includes("codex-tui.log"));
   assert(readmeContent.includes("sandbox_permissions"));
   assert(readmeContent.includes("apply_patch_approval_request"));
   assert(readmeContent.includes("does not infer approval from `ToolCall: apply_patch`"));
+  assert(readmeContent.includes("default.rules"));
+  assert(readmeContent.includes("1-second grace window"));
+  assert(readmeContent.includes("matching `function_call_output` arrives"));
+  assert(readmeContent.includes("TUI fallback signal"));
 });
 
 test("README documents direct Codex notify support and limitation", () => {
@@ -373,6 +762,39 @@ test("README documents direct Codex notify support and limitation", () => {
   assert(readmeContent.includes("agent-turn-complete"));
   assert(readmeContent.includes("notify = [\"claude-code-notify\"]"));
   assert(readmeContent.includes("cannot signal approval requests"));
+  assert(readmeContent.includes("codex-notify-wrapper.vbs"));
+  assert(readmeContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
+});
+
+test("README documents the codex mcp sidecar companion", () => {
+  const readmeContent = read("README.md");
+  assert(readmeContent.includes("Codex MCP Sidecar"));
+  assert(readmeContent.includes("codex-mcp-sidecar"));
+  assert(readmeContent.includes("hidden-launch `codex-session-watch`"));
+  assert(readmeContent.includes("[mcp_servers.claude_code_notify_sidecar]"));
+  assert(readmeContent.includes("Do **not** set `cwd`"));
+  assert(readmeContent.includes("exact `sessionId` matches"));
+});
+
+test("docs explain reminder versus localization channel responsibilities", () => {
+  const readmeContent = read("README.md");
+  const developmentContent = read("DEVELOPMENT.md");
+  assert(readmeContent.includes("Reminder + Localization Responsibilities"));
+  assert(readmeContent.includes("completion notifications + completion-time localization"));
+  assert(readmeContent.includes("approval-localization bridge from session start"));
+  assert(readmeContent.includes("completion does not need `codex-mcp-sidecar`"));
+  assert(readmeContent.includes("approval reminders rely on `codex-session-watch` and `codex-mcp-sidecar`"));
+  assert(readmeContent.includes("protocol-grade approval semantics"));
+  assert(readmeContent.includes("does not treat `tui.notifications` /"));
+  assert(developmentContent.includes("提醒 + 定位的职责拆分"));
+  assert(developmentContent.includes("通道能力矩阵"));
+  assert(developmentContent.includes("当前项目里的真实数据流"));
+  assert(developmentContent.includes("completion 不走 sidecar 这条链"));
+  assert(developmentContent.includes("为什么不把 approval 定位完全交给 MCP server"));
+  assert(developmentContent.includes("已批准命令 / 快速完成命令的误报"));
+  assert(developmentContent.includes("1 秒 grace 窗口"));
+  assert(developmentContent.includes("tui.notification_method"));
+  assert(developmentContent.includes("default.rules"));
 });
 
 console.log("\n--- Smoke ---");
@@ -452,6 +874,17 @@ if (!canSpawnChildren) {
       assert(output.includes("codex-session-watch"));
       assert(output.includes("--sessions-dir"));
       assert(output.includes("--tui-log"));
+    });
+
+    test("cli.js prints help for autostart", () => {
+      const output = execFileSync("node", [path.join(ROOT, "bin", "cli.js"), "autostart", "--help"], {
+        timeout: 15000,
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      assert(output.includes("autostart"));
+      assert(output.includes("codex-session-watch"));
+      assert(output.includes("enable"));
     });
   } else {
     console.log("  SKIP  Windows-only smoke checks");

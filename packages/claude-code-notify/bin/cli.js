@@ -7,6 +7,11 @@ const path = require("path");
 const readline = require("readline");
 const { StringDecoder } = require("string_decoder");
 const {
+  findSidecarTerminalContextForProjectDir,
+  findSidecarTerminalContextForSession,
+  writeSidecarRecord,
+} = require("../lib/codex-sidecar-state");
+const {
   createNotificationSpec,
   normalizeIncomingNotification,
 } = require("../lib/notification-sources");
@@ -14,6 +19,11 @@ const {
 const PACKAGE_VERSION = readPackageVersion();
 const LOG_DIR = path.join(os.tmpdir(), "claude-code-notify");
 const IS_DEV = !fs.existsSync(path.join(__dirname, "..", ".published"));
+const SIDECAR_SESSION_RESOLUTION_POLL_MS = 1000;
+const SIDECAR_SESSION_RESOLUTION_TIMEOUT_MS = 90 * 1000;
+const SIDECAR_SESSION_RESOLUTION_MAX_PAST_MS = 30 * 1000;
+const SIDECAR_SESSION_RESOLUTION_MAX_FUTURE_MS = 10 * 60 * 1000;
+const CODEX_APPROVAL_NOTIFY_GRACE_MS = 1000;
 
 if (require.main === module) {
   runCli();
@@ -38,6 +48,11 @@ function ensureWindows() {
 async function main() {
   const argv = process.argv.slice(2);
 
+  if (argv[0] === "autostart" || argv[0] === "--autostart") {
+    await runAutostartMode(argv[0] === "--autostart" ? argv.slice(1) : argv.slice(1));
+    return;
+  }
+
   if (argv[0] === "codex" || argv[0] === "codex-watch" || argv[0] === "--codex-watch") {
     await runCodexWatchMode(argv[0] === "--codex-watch" ? argv.slice(1) : argv.slice(1));
     return;
@@ -47,6 +62,11 @@ async function main() {
     await runCodexSessionWatchMode(
       argv[0] === "--codex-session-watch" ? argv.slice(1) : argv.slice(1)
     );
+    return;
+  }
+
+  if (argv[0] === "codex-mcp-sidecar" || argv[0] === "mcp-sidecar") {
+    await runCodexMcpSidecarMode(argv.slice(1));
     return;
   }
 
@@ -63,13 +83,17 @@ function printHelp() {
     [
       "Usage:",
       "  claude-code-notify",
+      "  claude-code-notify autostart [status|enable|disable] [codex-session-watch flags...]",
       "  claude-code-notify codex-watch [--all-cwds] [--cwd <path>] [--codex-bin <path>]",
       "  claude-code-notify codex-session-watch [--sessions-dir <path>] [--tui-log <path>] [--poll-ms <ms>]",
+      "  claude-code-notify codex-mcp-sidecar",
       "",
       "Modes:",
       "  default      Read notification JSON from stdin or argv and show a notification",
+      "  autostart    Manage Windows logon autostart for codex-session-watch",
       "  codex-watch  Start the official `codex app-server` and notify when a thread enters waitingOnApproval",
       "  codex-session-watch  Watch local Codex rollout files and TUI logs for approval events",
+      "  codex-mcp-sidecar  Run a minimal MCP sidecar that records Codex terminal/session hints and ensures codex-session-watch is running",
       "",
       "Flags:",
       "  --shell-pid <pid>  Override the detected shell pid",
@@ -82,6 +106,31 @@ function printHelp() {
       "",
     ].join(os.EOL)
   );
+}
+
+async function runAutostartMode(argv) {
+  if (argv[0] === "--help" || argv[0] === "help") {
+    printHelp();
+    return;
+  }
+
+  const action = argv[0] || "status";
+  if (action === "status") {
+    printCodexSessionWatchAutostartStatus();
+    return;
+  }
+
+  if (action === "enable") {
+    enableCodexSessionWatchAutostart(argv.slice(1));
+    return;
+  }
+
+  if (action === "disable") {
+    disableCodexSessionWatchAutostart();
+    return;
+  }
+
+  throw new Error(`unknown autostart action: ${action}`);
 }
 
 async function runDefaultNotifyMode(argv) {
@@ -391,17 +440,33 @@ async function runCodexSessionWatchMode(argv) {
   const pollMs = parsePositiveInteger(getArgValue(argv, "--poll-ms"), 1000);
 
   const runtime = createRuntime(`codex-session-watch-${Date.now()}`);
+  const instanceLock = acquireSingleInstanceLock("codex-session-watch", runtime.log);
+  if (!instanceLock.acquired) {
+    runtime.log(
+      `another codex-session-watch is already running pid=${instanceLock.existingPid || "unknown"}`
+    );
+    return;
+  }
+
   const terminal = createNeutralTerminalContext();
   const fileStates = new Map();
   const sessionProjectDirs = new Map();
+  const sessionApprovalContexts = new Map();
   const emittedEventKeys = new Map();
+  const pendingApprovalNotifications = new Map();
+  const pendingApprovalCallIds = new Map();
+  const approvedCommandRuleCache = createApprovedCommandRuleCache(
+    path.join(getCodexHomeDir(), "rules", "default.rules")
+  );
   let tuiLogState = null;
   let initialScan = true;
   let scanInProgress = false;
+  let shuttingDown = false;
 
   runtime.log(
     `started mode=codex-session-watch sessionsDir=${sessionsDir} tuiLogPath=${tuiLogPath} pollMs=${pollMs}`
   );
+  runtime.log(`acquired single-instance lock file=${instanceLock.lockPath}`);
 
   if (!fileExistsCaseInsensitive(sessionsDir)) {
     runtime.log(`sessions dir not found yet: ${sessionsDir}`);
@@ -413,6 +478,7 @@ async function runCodexSessionWatchMode(argv) {
 
   const interval = setInterval(scanOnce, pollMs);
 
+  process.on("exit", () => releaseSingleInstanceLock(instanceLock, runtime.log));
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
@@ -420,8 +486,13 @@ async function runCodexSessionWatchMode(argv) {
   initialScan = false;
 
   function shutdown(signal) {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
     clearInterval(interval);
     runtime.log(`stopped mode=codex-session-watch signal=${signal}`);
+    releaseSingleInstanceLock(instanceLock, runtime.log);
     process.exit(0);
   }
 
@@ -462,10 +533,20 @@ async function runCodexSessionWatchMode(argv) {
           runtime,
           terminal,
           emittedEventKeys,
+          pendingApprovalNotifications,
+          pendingApprovalCallIds,
+          approvedCommandRuleCache,
         });
 
         if (state.sessionId && state.cwd) {
           sessionProjectDirs.set(state.sessionId, state.cwd);
+        }
+
+        if (state.sessionId && (state.approvalPolicy || state.sandboxPolicy)) {
+          sessionApprovalContexts.set(state.sessionId, {
+            approvalPolicy: state.approvalPolicy || "",
+            sandboxPolicy: state.sandboxPolicy || null,
+          });
         }
       });
 
@@ -481,8 +562,19 @@ async function runCodexSessionWatchMode(argv) {
         terminal,
         emittedEventKeys,
         sessionProjectDirs,
+        sessionApprovalContexts,
+        pendingApprovalNotifications,
+        pendingApprovalCallIds,
+        approvedCommandRuleCache,
       });
 
+      flushPendingApprovalNotifications({
+        runtime,
+        terminal,
+        emittedEventKeys,
+        pendingApprovalNotifications,
+        pendingApprovalCallIds,
+      });
       pruneEmittedEventKeys(emittedEventKeys, 4096);
     } catch (error) {
       runtime.log(`session scan failed: ${error.message}`);
@@ -490,6 +582,422 @@ async function runCodexSessionWatchMode(argv) {
       scanInProgress = false;
     }
   }
+}
+
+async function runCodexMcpSidecarMode(argv) {
+  if (argv[0] === "--help" || argv[0] === "help") {
+    printHelp();
+    return;
+  }
+
+  const runtime = createRuntime(`codex-mcp-sidecar-${Date.now()}`);
+  ensureCodexSessionWatchRunning(runtime.log);
+  const parentInfo = findParentInfo(runtime.log);
+  const sessionsDir = path.join(getCodexHomeDir(), "sessions");
+  const recordId = `codex-mcp-sidecar-${process.pid}-${Date.now()}`;
+  let sidecarRecord = writeSidecarRecord({
+    recordId,
+    pid: process.pid,
+    parentPid: process.ppid,
+    cwd: process.cwd(),
+    sessionId: "",
+    startedAt: new Date().toISOString(),
+    resolvedAt: "",
+    hwnd: parentInfo.hwnd,
+    shellPid: parentInfo.shellPid,
+    isWindowsTerminal: parentInfo.isWindowsTerminal,
+  });
+
+  runtime.log(
+    `started mode=codex-mcp-sidecar cwd=${sidecarRecord.cwd} shellPid=${sidecarRecord.shellPid || ""} hwnd=${sidecarRecord.hwnd || ""} sessionsDir=${sessionsDir}`
+  );
+
+  const resolver = startSidecarSessionResolver({
+    getCurrentRecord: () => sidecarRecord,
+    updateRecord(nextRecord) {
+      sidecarRecord = writeSidecarRecord(nextRecord);
+      return sidecarRecord;
+    },
+    sessionsDir,
+    log: runtime.log,
+  });
+
+  let cleanedUp = false;
+  const cleanup = () => {
+    if (cleanedUp) {
+      return;
+    }
+    cleanedUp = true;
+    resolver.stop();
+    runtime.log(
+      `stopped mode=codex-mcp-sidecar recordId=${recordId} sessionId=${sidecarRecord.sessionId || ""} retained=1`
+    );
+  };
+
+  process.on("exit", cleanup);
+  process.on("SIGINT", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    cleanup();
+    process.exit(0);
+  });
+
+  try {
+    await Promise.all([serveMinimalMcpServer({ runtime }), resolver.done]);
+  } finally {
+    cleanup();
+  }
+}
+
+function startSidecarSessionResolver({ getCurrentRecord, updateRecord, sessionsDir, log }) {
+  let attempts = 0;
+  let interval = null;
+  let stopped = false;
+  let resolveDone = () => {};
+  const done = new Promise((resolve) => {
+    resolveDone = resolve;
+  });
+
+  const tick = () => {
+    if (stopped) {
+      return;
+    }
+
+    const currentRecord = getCurrentRecord();
+    if (!currentRecord || currentRecord.sessionId) {
+      stop();
+      return;
+    }
+
+    attempts += 1;
+    const candidate = resolveSidecarSessionCandidate({
+      cwd: currentRecord.cwd,
+      sessionsDir,
+      startedAtMs: Date.parse(currentRecord.startedAt),
+      log,
+    });
+
+    if (candidate) {
+      const resolvedAt = new Date().toISOString();
+      updateRecord({
+        ...currentRecord,
+        sessionId: candidate.sessionId,
+        resolvedAt,
+      });
+      log(
+        `resolved mcp sidecar sessionId=${candidate.sessionId} file=${candidate.filePath} scoreMs=${candidate.score} reference=${candidate.referenceKind}`
+      );
+      stop();
+      return;
+    }
+
+    if (attempts * SIDECAR_SESSION_RESOLUTION_POLL_MS >= SIDECAR_SESSION_RESOLUTION_TIMEOUT_MS) {
+      log(
+        `mcp sidecar session resolution timed out cwd=${currentRecord.cwd} timeoutMs=${SIDECAR_SESSION_RESOLUTION_TIMEOUT_MS}`
+      );
+      stop();
+    }
+  };
+
+  interval = setInterval(tick, SIDECAR_SESSION_RESOLUTION_POLL_MS);
+  tick();
+
+  return {
+    done,
+    stop,
+  };
+
+  function stop() {
+    if (stopped) {
+      return;
+    }
+    stopped = true;
+    if (interval) {
+      clearInterval(interval);
+      interval = null;
+    }
+    resolveDone();
+  }
+}
+
+function resolveSidecarSessionCandidate({ cwd, sessionsDir, startedAtMs, log }) {
+  if (!cwd || !sessionsDir || !fileExistsCaseInsensitive(sessionsDir)) {
+    return null;
+  }
+
+  const candidates = [];
+
+  listRolloutFiles(sessionsDir, log).forEach((filePath) => {
+    const rolloutStartedAtMs = parseRolloutTimestampFromPath(filePath);
+    let stat = null;
+
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      return;
+    }
+
+    const metadata = readRolloutMetadata(filePath, log);
+    if (!metadata.sessionId || !isSameWindowsPath(metadata.cwd, cwd)) {
+      return;
+    }
+
+    const reference = pickBestSidecarCandidateReference(
+      [
+        {
+          kind: "latest_event",
+          timestampMs: metadata.latestEventAtMs,
+        },
+        {
+          kind: "mtime",
+          timestampMs: stat.mtimeMs,
+        },
+        {
+          kind: "rollout_start",
+          timestampMs: rolloutStartedAtMs,
+        },
+      ],
+      startedAtMs
+    );
+    if (!reference) {
+      return;
+    }
+
+    candidates.push({
+      filePath,
+      sessionId: metadata.sessionId,
+      score: reference.score,
+      isFutureMatch: reference.signedDistanceMs >= 0,
+      referenceStartedAtMs: reference.timestampMs,
+      referenceKind: reference.kind,
+    });
+  });
+
+  return pickSidecarSessionCandidate(candidates);
+}
+
+function pickBestSidecarCandidateReference(references, startedAtMs) {
+  if (!Array.isArray(references) || !startedAtMs) {
+    return null;
+  }
+
+  const priority = {
+    latest_event: 3,
+    mtime: 2,
+    rollout_start: 1,
+  };
+
+  const candidates = references
+    .filter(
+      (reference) =>
+        reference &&
+        reference.timestampMs &&
+        isSidecarResolutionTimeMatch({
+          candidateStartedAtMs: reference.timestampMs,
+          sidecarStartedAtMs: startedAtMs,
+        })
+    )
+    .map((reference) => ({
+      kind: reference.kind,
+      timestampMs: reference.timestampMs,
+      signedDistanceMs: reference.timestampMs - startedAtMs,
+      score: Math.abs(reference.timestampMs - startedAtMs),
+      priority: priority[reference.kind] || 0,
+    }))
+    .sort(
+      (left, right) =>
+        left.score - right.score ||
+        right.priority - left.priority ||
+        Number(right.signedDistanceMs >= 0) - Number(left.signedDistanceMs >= 0)
+    );
+
+  return candidates[0] || null;
+}
+
+function pickSidecarSessionCandidate(candidates) {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return null;
+  }
+
+  const sorted = candidates
+    .slice()
+    .sort(
+      (left, right) =>
+        left.score - right.score ||
+        Number(right.isFutureMatch === true) - Number(left.isFutureMatch === true) ||
+        right.referenceStartedAtMs - left.referenceStartedAtMs ||
+        left.sessionId.localeCompare(right.sessionId)
+    );
+
+  const best = sorted[0];
+  const second = sorted[1];
+  if (!best || best.score > 2 * 60 * 1000) {
+    return null;
+  }
+
+  if (
+    second &&
+    Math.abs(best.score - second.score) < 3000 &&
+    (best.isFutureMatch === second.isFutureMatch || best.isFutureMatch !== true)
+  ) {
+    return null;
+  }
+
+  return best;
+}
+
+function isSidecarResolutionTimeMatch({ candidateStartedAtMs, sidecarStartedAtMs }) {
+  if (!candidateStartedAtMs || !sidecarStartedAtMs) {
+    return false;
+  }
+
+  const signedDistanceMs = candidateStartedAtMs - sidecarStartedAtMs;
+  return (
+    signedDistanceMs >= -SIDECAR_SESSION_RESOLUTION_MAX_PAST_MS &&
+    signedDistanceMs <= SIDECAR_SESSION_RESOLUTION_MAX_FUTURE_MS
+  );
+}
+
+function parseRolloutTimestampFromPath(filePath) {
+  const match = path
+    .basename(filePath)
+    .match(/^rollout-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-.+\.jsonl$/i);
+
+  if (!match) {
+    return 0;
+  }
+
+  const [, datePart, hourPart, minutePart, secondPart] = match;
+  const parsed = new Date(
+    `${datePart}T${hourPart}:${minutePart}:${secondPart}`
+  ).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isSameWindowsPath(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+
+  return normalizeWindowsPath(left) === normalizeWindowsPath(right);
+}
+
+function normalizeWindowsPath(value) {
+  try {
+    return path.resolve(value).replace(/\//g, "\\").toLowerCase();
+  } catch {
+    return String(value || "")
+      .replace(/\//g, "\\")
+      .toLowerCase();
+  }
+}
+
+function serveMinimalMcpServer({ runtime }) {
+  const reader = readline.createInterface({
+    input: process.stdin,
+    crlfDelay: Infinity,
+  });
+
+  return new Promise((resolve) => {
+    reader.on("line", (line) => {
+      if (!line.trim()) {
+        return;
+      }
+
+      let message;
+      try {
+        message = JSON.parse(stripUtf8Bom(line));
+      } catch (error) {
+        runtime.log(`mcp parse failed error=${error.message}`);
+        return;
+      }
+
+      handleMcpServerMessage(message, runtime.log);
+    });
+
+    reader.on("close", resolve);
+    process.stdin.on("end", resolve);
+  });
+}
+
+function handleMcpServerMessage(message, log) {
+  if (!message || typeof message.method !== "string") {
+    return;
+  }
+
+  const hasId = Object.prototype.hasOwnProperty.call(message, "id");
+  if (typeof log === "function") {
+    log(`mcp method received method=${message.method} hasId=${hasId ? "1" : "0"}`);
+  }
+  if (!hasId) {
+    return;
+  }
+
+  switch (message.method) {
+    case "initialize":
+      writeMcpResult(message.id, {
+        protocolVersion:
+          message &&
+          message.params &&
+          typeof message.params.protocolVersion === "string" &&
+          message.params.protocolVersion
+            ? message.params.protocolVersion
+            : "2025-03-26",
+        capabilities: {
+          prompts: {},
+          resources: {},
+          tools: {},
+        },
+        serverInfo: {
+          name: "claude-code-notify",
+          version: PACKAGE_VERSION,
+        },
+      });
+      return;
+    case "ping":
+      writeMcpResult(message.id, {});
+      return;
+    case "tools/list":
+      writeMcpResult(message.id, { tools: [] });
+      return;
+    case "resources/list":
+      writeMcpResult(message.id, { resources: [] });
+      return;
+    case "resources/templates/list":
+      writeMcpResult(message.id, { resourceTemplates: [] });
+      return;
+    case "prompts/list":
+      writeMcpResult(message.id, { prompts: [] });
+      return;
+    default:
+      log(`mcp unsupported method=${message.method}`);
+      writeMcpError(message.id, -32601, `Method not found: ${message.method}`);
+  }
+}
+
+function writeMcpResult(id, result) {
+  process.stdout.write(
+    `${JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result,
+    })}\n`
+  );
+}
+
+function writeMcpError(id, code, message) {
+  process.stdout.write(
+    `${JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      error: {
+        code,
+        message,
+      },
+    })}\n`
+  );
 }
 
 function createRuntime(logId) {
@@ -552,6 +1060,308 @@ function getEnvFirst(names) {
 function parsePositiveInteger(rawValue, fallbackValue) {
   const parsed = parseInt(rawValue, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallbackValue;
+}
+
+function printCodexSessionWatchAutostartStatus() {
+  const registration = queryCodexSessionWatchAutostartRegistration();
+
+  if (!registration) {
+    process.stdout.write("codex-session-watch autostart: disabled" + os.EOL);
+    return;
+  }
+
+  process.stdout.write("codex-session-watch autostart: enabled" + os.EOL);
+  process.stdout.write(`Run key: ${registration.key}` + os.EOL);
+  process.stdout.write(`Value: ${registration.valueName}` + os.EOL);
+  process.stdout.write(`Command: ${registration.command}` + os.EOL);
+}
+
+function enableCodexSessionWatchAutostart(watcherArgs) {
+  const command = buildCodexSessionWatchAutostartCommand(watcherArgs);
+  const result = spawnSync(
+    "reg.exe",
+    [
+      "add",
+      getCurrentUserRunKey(),
+      "/v",
+      getCodexSessionWatchAutostartValueName(),
+      "/t",
+      "REG_SZ",
+      "/d",
+      command,
+      "/f",
+    ],
+    { encoding: "utf8", windowsHide: true }
+  );
+
+  if (result.error || result.status !== 0) {
+    throw new Error(`failed to enable autostart: ${getChildProcessFailure(result)}`);
+  }
+
+  process.stdout.write("Enabled codex-session-watch autostart." + os.EOL);
+  if (watcherArgs.length > 0) {
+    process.stdout.write(`Watcher args: ${watcherArgs.join(" ")}` + os.EOL);
+  }
+}
+
+function disableCodexSessionWatchAutostart() {
+  const existing = queryCodexSessionWatchAutostartRegistration();
+  if (!existing) {
+    process.stdout.write("codex-session-watch autostart: already disabled" + os.EOL);
+    return;
+  }
+
+  const result = spawnSync(
+    "reg.exe",
+    ["delete", getCurrentUserRunKey(), "/v", getCodexSessionWatchAutostartValueName(), "/f"],
+    { encoding: "utf8", windowsHide: true }
+  );
+
+  if (result.error || result.status !== 0) {
+    throw new Error(`failed to disable autostart: ${getChildProcessFailure(result)}`);
+  }
+
+  process.stdout.write("Disabled codex-session-watch autostart." + os.EOL);
+}
+
+function queryCodexSessionWatchAutostartRegistration() {
+  const result = spawnSync(
+    "reg.exe",
+    ["query", getCurrentUserRunKey(), "/v", getCodexSessionWatchAutostartValueName()],
+    { encoding: "utf8", windowsHide: true }
+  );
+
+  if (result.error || result.status !== 0) {
+    return null;
+  }
+
+  const line = (result.stdout || "")
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(getCodexSessionWatchAutostartValueName()));
+
+  if (!line) {
+    return null;
+  }
+
+  const match = line.match(/^[^\s]+\s+REG_\w+\s+(.*)$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    key: getCurrentUserRunKey(),
+    valueName: getCodexSessionWatchAutostartValueName(),
+    command: match[1].trim(),
+  };
+}
+
+function buildCodexSessionWatchAutostartCommand(watcherArgs) {
+  const wscriptPath = getWindowsScriptHostPath();
+  const launcherScript = getHiddenLauncherScriptPath();
+  const launchArgs = buildCodexSessionWatchLaunchArgs(watcherArgs);
+
+  return [wscriptPath, launcherScript, ...launchArgs]
+    .map((arg) => quoteWindowsCommandArg(arg))
+    .join(" ");
+}
+
+function ensureCodexSessionWatchRunning(log) {
+  const state = querySingleInstanceLock("codex-session-watch");
+  if (state.running) {
+    if (typeof log === "function") {
+      log(`codex-session-watch already running pid=${state.pid} lock=${state.lockPath}`);
+    }
+    return { launched: false, pid: state.pid, lockPath: state.lockPath };
+  }
+
+  if (state.pid && typeof log === "function") {
+    log(`codex-session-watch lock is stale pid=${state.pid} lock=${state.lockPath}`);
+  }
+
+  const child = launchCodexSessionWatchHidden([], log);
+  return {
+    launched: true,
+    pid: child && child.pid ? child.pid : null,
+    lockPath: state.lockPath,
+  };
+}
+
+function launchCodexSessionWatchHidden(watcherArgs, log) {
+  const launchArgs = buildCodexSessionWatchLaunchArgs(watcherArgs);
+  const wscriptPath = getWindowsScriptHostPath();
+  const launcherScript = getHiddenLauncherScriptPath();
+
+  if (fileExistsCaseInsensitive(wscriptPath) && fileExistsCaseInsensitive(launcherScript)) {
+    const child = spawnDetachedHiddenProcess(
+      wscriptPath,
+      [launcherScript, ...launchArgs],
+      "codex-session-watch launcher",
+      log
+    );
+    if (typeof log === "function") {
+      log(`spawned codex-session-watch launcher pid=${child.pid || ""}`);
+    }
+    return child;
+  }
+
+  const child = spawnDetachedHiddenProcess(
+    process.execPath,
+    [path.resolve(__filename), "codex-session-watch", ...watcherArgs],
+    "codex-session-watch direct",
+    log
+  );
+  if (typeof log === "function") {
+    log(`spawned codex-session-watch directly pid=${child.pid || ""}`);
+  }
+  return child;
+}
+
+function spawnDetachedHiddenProcess(command, args, label, log) {
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.on("error", (error) => {
+    if (typeof log === "function") {
+      log(`${label} spawn failed: ${error.message}`);
+    }
+  });
+  child.unref();
+  return child;
+}
+
+function buildCodexSessionWatchLaunchArgs(watcherArgs) {
+  const extraArgs = Array.isArray(watcherArgs) ? watcherArgs : [];
+  return [process.execPath, path.resolve(__filename), "codex-session-watch", ...extraArgs];
+}
+
+function getWindowsScriptHostPath() {
+  return path.join(process.env.SystemRoot || "C:\\Windows", "System32", "wscript.exe");
+}
+
+function getHiddenLauncherScriptPath() {
+  return path.join(__dirname, "..", "scripts", "start-hidden.vbs");
+}
+
+function getCurrentUserRunKey() {
+  return "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+}
+
+function getCodexSessionWatchAutostartValueName() {
+  return "claude-code-notify-codex-session-watch";
+}
+
+function quoteWindowsCommandArg(value) {
+  const text = String(value);
+  if (!text) {
+    return '""';
+  }
+
+  return `"${text.replace(/(\\*)"/g, "$1$1\\\"").replace(/(\\+)$/g, "$1$1")}"`;
+}
+
+function acquireSingleInstanceLock(lockName, log) {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+  const lockPath = getSingleInstanceLockPath(lockName);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const handle = fs.openSync(lockPath, "wx");
+      fs.writeFileSync(
+        handle,
+        JSON.stringify({
+          pid: process.pid,
+          startedAt: new Date().toISOString(),
+        }),
+        "utf8"
+      );
+      fs.closeSync(handle);
+      return { acquired: true, lockPath };
+    } catch (error) {
+      if (!error || error.code !== "EEXIST") {
+        throw error;
+      }
+
+      const existingPid = readLockPid(lockPath);
+      if (isProcessRunning(existingPid)) {
+        return { acquired: false, lockPath, existingPid };
+      }
+
+      try {
+        fs.unlinkSync(lockPath);
+        if (typeof log === "function") {
+          log(`removed stale lock file=${lockPath} pid=${existingPid || "unknown"}`);
+        }
+      } catch {
+        return { acquired: false, lockPath, existingPid };
+      }
+    }
+  }
+
+  return { acquired: false, lockPath };
+}
+
+function querySingleInstanceLock(lockName) {
+  const lockPath = getSingleInstanceLockPath(lockName);
+  const pid = readLockPid(lockPath);
+
+  return {
+    lockPath,
+    pid,
+    running: isProcessRunning(pid),
+  };
+}
+
+function getSingleInstanceLockPath(lockName) {
+  return path.join(LOG_DIR, `${lockName}.lock`);
+}
+
+function releaseSingleInstanceLock(lockInfo, log) {
+  if (!lockInfo || !lockInfo.lockPath || lockInfo.released) {
+    return;
+  }
+
+  const ownerPid = readLockPid(lockInfo.lockPath);
+  if (ownerPid && ownerPid !== process.pid) {
+    lockInfo.released = true;
+    return;
+  }
+
+  try {
+    if (fs.existsSync(lockInfo.lockPath)) {
+      fs.unlinkSync(lockInfo.lockPath);
+      if (typeof log === "function") {
+        log(`released single-instance lock file=${lockInfo.lockPath}`);
+      }
+    }
+  } catch {}
+
+  lockInfo.released = true;
+}
+
+function readLockPid(lockPath) {
+  try {
+    const payload = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+    const pid = parseInt(payload && payload.pid, 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function isProcessRunning(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function getCodexHomeDir() {
@@ -762,6 +1572,8 @@ function createSessionFileState(filePath) {
     sessionId: parseSessionIdFromRolloutPath(filePath),
     cwd: "",
     turnId: "",
+    approvalPolicy: "",
+    sandboxPolicy: null,
   };
 }
 
@@ -786,6 +1598,14 @@ function bootstrapExistingSessionFileState(state, stat, log) {
     state.cwd = metadata.cwd;
   }
 
+  if (metadata.approvalPolicy) {
+    state.approvalPolicy = metadata.approvalPolicy;
+  }
+
+  if (metadata.sandboxPolicy) {
+    state.sandboxPolicy = metadata.sandboxPolicy;
+  }
+
   state.position = stat.size;
   state.partial = "";
   state.decoder = new StringDecoder("utf8");
@@ -808,6 +1628,9 @@ function readRolloutMetadata(filePath, log) {
   const result = {
     sessionId: parseSessionIdFromRolloutPath(filePath),
     cwd: "",
+    approvalPolicy: "",
+    sandboxPolicy: null,
+    latestEventAtMs: 0,
   };
 
   try {
@@ -816,44 +1639,68 @@ function readRolloutMetadata(filePath, log) {
       return result;
     }
 
-    const bytesToRead = Math.min(stat.size, 65536);
-    const buffer = readFileRange(filePath, 0, bytesToRead);
-    const lines = buffer.toString("utf8").split(/\r?\n/);
+    const headBytesToRead = Math.min(stat.size, 65536);
+    const headBuffer = readFileRange(filePath, 0, headBytesToRead);
+    consumeRolloutMetadataChunk(result, headBuffer, false);
 
-    for (const line of lines) {
-      if (!line.trim()) {
-        continue;
-      }
-
-      let record;
-      try {
-        record = JSON.parse(stripUtf8Bom(line));
-      } catch {
-        continue;
-      }
-
-      if (record.type === "session_meta" && record.payload) {
-        if (record.payload.id) {
-          result.sessionId = record.payload.id;
-        }
-        if (record.payload.cwd) {
-          result.cwd = record.payload.cwd;
-        }
-      }
-
-      if (!result.cwd && record.type === "turn_context" && record.payload && record.payload.cwd) {
-        result.cwd = record.payload.cwd;
-      }
-
-      if (result.sessionId && result.cwd) {
-        break;
-      }
+    if (stat.size > headBytesToRead) {
+      const tailBytesToRead = Math.min(stat.size, 262144);
+      const tailBuffer = readFileRange(filePath, stat.size - tailBytesToRead, tailBytesToRead);
+      consumeRolloutMetadataChunk(result, tailBuffer, true);
     }
   } catch (error) {
     log(`metadata read failed file=${filePath} error=${error.message}`);
   }
 
   return result;
+}
+
+function consumeRolloutMetadataChunk(result, buffer, preferLatestTurnContext) {
+  const lines = buffer.toString("utf8").split(/\r?\n/);
+
+  for (const line of lines) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    let record;
+    try {
+      record = JSON.parse(stripUtf8Bom(line));
+    } catch {
+      continue;
+    }
+
+    const recordTimestampMs = Date.parse(record.timestamp || "");
+    if (Number.isFinite(recordTimestampMs) && recordTimestampMs > result.latestEventAtMs) {
+      result.latestEventAtMs = recordTimestampMs;
+    }
+
+    if (record.type === "session_meta" && record.payload) {
+      if (record.payload.id) {
+        result.sessionId = record.payload.id;
+      }
+      if (!result.cwd && record.payload.cwd) {
+        result.cwd = record.payload.cwd;
+      }
+      continue;
+    }
+
+    if (record.type !== "turn_context" || !record.payload) {
+      continue;
+    }
+
+    if (record.payload.cwd && (preferLatestTurnContext || !result.cwd)) {
+      result.cwd = record.payload.cwd;
+    }
+
+    if (record.payload.approval_policy && (preferLatestTurnContext || !result.approvalPolicy)) {
+      result.approvalPolicy = record.payload.approval_policy;
+    }
+
+    if (record.payload.sandbox_policy && (preferLatestTurnContext || !result.sandboxPolicy)) {
+      result.sandboxPolicy = record.payload.sandbox_policy;
+    }
+  }
 }
 
 function readFileRange(filePath, start, length) {
@@ -869,7 +1716,18 @@ function readFileRange(filePath, start, length) {
   return buffer;
 }
 
-function consumeSessionFileUpdates(state, stat, { runtime, terminal, emittedEventKeys }) {
+function consumeSessionFileUpdates(
+  state,
+  stat,
+  {
+    runtime,
+    terminal,
+    emittedEventKeys,
+    pendingApprovalNotifications,
+    pendingApprovalCallIds,
+    approvedCommandRuleCache,
+  }
+) {
   if (stat.size < state.position) {
     runtime.log(`session file truncated file=${state.filePath}`);
     state.position = 0;
@@ -897,6 +1755,9 @@ function consumeSessionFileUpdates(state, stat, { runtime, terminal, emittedEven
       runtime,
       terminal,
       emittedEventKeys,
+      pendingApprovalNotifications,
+      pendingApprovalCallIds,
+      approvedCommandRuleCache,
     });
   });
 }
@@ -930,7 +1791,16 @@ function syncCodexTuiLogState(state, tuiLogPath, context) {
 function consumeCodexTuiLogUpdates(
   state,
   stat,
-  { runtime, terminal, emittedEventKeys, sessionProjectDirs }
+  {
+    runtime,
+    terminal,
+    emittedEventKeys,
+    sessionProjectDirs,
+    sessionApprovalContexts,
+    pendingApprovalNotifications,
+    pendingApprovalCallIds,
+    approvedCommandRuleCache,
+  }
 ) {
   if (stat.size < state.position) {
     runtime.log(`tui log truncated file=${state.filePath}`);
@@ -956,6 +1826,10 @@ function consumeCodexTuiLogUpdates(
       terminal,
       emittedEventKeys,
       sessionProjectDirs,
+      sessionApprovalContexts,
+      pendingApprovalNotifications,
+      pendingApprovalCallIds,
+      approvedCommandRuleCache,
     });
   });
 }
@@ -1003,8 +1877,442 @@ function buildApprovalDedupeKey({
   ].join("|");
 }
 
+function emitCodexApprovalNotification({ event, runtime, terminal, emittedEventKeys, origin }) {
+  if (!shouldEmitEventKey(emittedEventKeys, event.dedupeKey)) {
+    return false;
+  }
 
-function handleSessionRecord(state, line, { runtime, terminal, emittedEventKeys }) {
+  runtime.log(
+    `${origin} event matched type=${event.eventType} sessionId=${event.sessionId || "unknown"} turnId=${event.turnId || ""} cwd=${event.projectDir || ""}`
+  );
+
+  const notificationTerminal = resolveApprovalTerminalContext({
+    sessionId: event.sessionId,
+    projectDir: event.projectDir,
+    fallbackTerminal: terminal,
+    log: runtime.log,
+  });
+
+  const child = emitNotification({
+    source: event.source,
+    eventName: event.eventName,
+    title: event.title,
+    message: event.message,
+    rawEventType: event.eventType,
+    runtime,
+    terminal: notificationTerminal,
+  });
+
+  child.on("close", (code) => {
+    runtime.log(
+      `notify.ps1 exited code=${code} sessionId=${event.sessionId || "unknown"} eventType=${event.eventType}`
+    );
+  });
+
+  child.on("error", (error) => {
+    runtime.log(
+      `notify.ps1 spawn failed sessionId=${event.sessionId || "unknown"} eventType=${event.eventType} error=${error.message}`
+    );
+  });
+
+  return true;
+}
+
+function queuePendingApprovalNotification({
+  runtime,
+  pendingApprovalNotifications,
+  pendingApprovalCallIds,
+  emittedEventKeys,
+  event,
+}) {
+  const key = event.dedupeKey || `${event.sessionId || "unknown"}|${event.turnId || "unknown"}`;
+  if (key && emittedEventKeys && emittedEventKeys.has(key)) {
+    return;
+  }
+  const existing = pendingApprovalNotifications.get(key);
+
+  if (existing) {
+    if (!existing.callId && event.callId) {
+      existing.callId = event.callId;
+      pendingApprovalCallIds.set(event.callId, key);
+    }
+    return;
+  }
+
+  const pending = {
+    ...event,
+    pendingSinceMs: Date.now(),
+    deadlineMs: Date.now() + CODEX_APPROVAL_NOTIFY_GRACE_MS,
+  };
+
+  pendingApprovalNotifications.set(key, pending);
+  if (pending.callId) {
+    pendingApprovalCallIds.set(pending.callId, key);
+  }
+
+  runtime.log(
+    `queued approval pending sessionId=${pending.sessionId || "unknown"} turnId=${pending.turnId || ""} callId=${pending.callId || ""} deadlineMs=${pending.deadlineMs}`
+  );
+}
+
+function cancelPendingApprovalNotification({
+  runtime,
+  pendingApprovalNotifications,
+  pendingApprovalCallIds,
+  callId,
+  reason,
+}) {
+  if (!callId) {
+    return false;
+  }
+
+  const key = pendingApprovalCallIds.get(callId);
+  if (!key) {
+    return false;
+  }
+
+  pendingApprovalCallIds.delete(callId);
+  const pending = pendingApprovalNotifications.get(key);
+  if (!pending) {
+    return false;
+  }
+
+  pendingApprovalNotifications.delete(key);
+  runtime.log(
+    `cancelled approval pending sessionId=${pending.sessionId || "unknown"} turnId=${pending.turnId || ""} callId=${callId} reason=${reason || "unknown"}`
+  );
+  return true;
+}
+
+function flushPendingApprovalNotifications({
+  runtime,
+  terminal,
+  emittedEventKeys,
+  pendingApprovalNotifications,
+  pendingApprovalCallIds,
+}) {
+  const now = Date.now();
+  Array.from(pendingApprovalNotifications.entries()).forEach(([key, pending]) => {
+    if (pending.deadlineMs > now) {
+      return;
+    }
+
+    pendingApprovalNotifications.delete(key);
+    if (pending.callId) {
+      pendingApprovalCallIds.delete(pending.callId);
+    }
+
+    emitCodexApprovalNotification({
+      event: pending,
+      runtime,
+      terminal,
+      emittedEventKeys,
+      origin: "pending",
+    });
+  });
+}
+
+function createApprovedCommandRuleCache(filePath) {
+  return {
+    filePath,
+    mtimeMs: -1,
+    size: -1,
+    rules: [],
+  };
+}
+
+function getApprovedCommandRules(cache, log) {
+  if (!cache || !cache.filePath || !fileExistsCaseInsensitive(cache.filePath)) {
+    return [];
+  }
+
+  let stat;
+  try {
+    stat = fs.statSync(cache.filePath);
+  } catch (error) {
+    log(`approved rules stat failed file=${cache.filePath} error=${error.message}`);
+    return cache.rules || [];
+  }
+
+  if (cache.mtimeMs === stat.mtimeMs && cache.size === stat.size && Array.isArray(cache.rules)) {
+    return cache.rules;
+  }
+
+  try {
+    const content = fs.readFileSync(cache.filePath, "utf8");
+    cache.rules = parseApprovedCommandRules(content);
+    cache.mtimeMs = stat.mtimeMs;
+    cache.size = stat.size;
+  } catch (error) {
+    log(`approved rules read failed file=${cache.filePath} error=${error.message}`);
+  }
+
+  return cache.rules || [];
+}
+
+function parseApprovedCommandRules(content) {
+  const lines = String(content || "").split(/\r?\n/);
+  const rules = [];
+
+  lines.forEach((line) => {
+    if (!line.includes('decision="allow"') || !line.includes("prefix_rule(")) {
+      return;
+    }
+
+    const match = line.match(/prefix_rule\(pattern=(\[[\s\S]*\]), decision="allow"\)\s*$/);
+    if (!match) {
+      return;
+    }
+
+    let pattern;
+    try {
+      pattern = JSON.parse(match[1]);
+    } catch {
+      return;
+    }
+
+    if (!Array.isArray(pattern) || !pattern.every((value) => typeof value === "string")) {
+      return;
+    }
+
+    const shellCommand = extractApprovedRuleShellCommand(pattern);
+    rules.push({
+      pattern,
+      shellCommand,
+      shellCommandTokens: shellCommand ? extractLeadingCommandTokens(shellCommand) : [],
+    });
+  });
+
+  return rules;
+}
+
+function extractApprovedRuleShellCommand(pattern) {
+  if (!Array.isArray(pattern) || pattern.length < 3) {
+    return "";
+  }
+
+  const exeName = path.basename(pattern[0] || "").toLowerCase();
+  const arg1 = String(pattern[1] || "").toLowerCase();
+  if ((exeName === "powershell.exe" || exeName === "powershell" || exeName === "pwsh.exe" || exeName === "pwsh") && arg1 === "-command") {
+    return String(pattern[2] || "").trim();
+  }
+  if ((exeName === "cmd.exe" || exeName === "cmd") && arg1 === "/c") {
+    return String(pattern[2] || "").trim();
+  }
+  return "";
+}
+
+function getCodexRequireEscalatedSuppressionReason({
+  event,
+  approvalPolicy,
+  sandboxPolicy,
+  approvedCommandRules,
+}) {
+  if (!event || event.eventType !== "require_escalated_tool_call" || !event.toolArgs) {
+    return "";
+  }
+
+  if (approvalPolicy === "never") {
+    return "approval_policy_never";
+  }
+
+  if (sandboxPolicy && sandboxPolicy.type === "danger-full-access") {
+    return "danger_full_access";
+  }
+
+  if (matchesApprovedCommandRule(event.toolArgs, approvedCommandRules)) {
+    return "approved_rule";
+  }
+
+  return "";
+}
+
+function matchesApprovedCommandRule(args, approvedCommandRules) {
+  if (!args || !Array.isArray(approvedCommandRules) || !approvedCommandRules.length) {
+    return false;
+  }
+
+  const normalizedCommand = normalizeShellCommandForMatch(args.command);
+  const normalizedPrefixRule = normalizePrefixRule(args.prefix_rule);
+
+  return approvedCommandRules.some((rule) => {
+    if (!rule || !rule.shellCommand) {
+      return false;
+    }
+
+    const normalizedRuleCommand = normalizeShellCommandForMatch(rule.shellCommand);
+    if (normalizedCommand && normalizedRuleCommand && normalizedCommand === normalizedRuleCommand) {
+      return true;
+    }
+
+    if (normalizedPrefixRule.length && arrayStartsWith(rule.shellCommandTokens || [], normalizedPrefixRule)) {
+      return true;
+    }
+
+    return false;
+  });
+}
+
+function normalizeShellCommandForMatch(command) {
+  return String(command || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizePrefixRule(prefixRule) {
+  if (!Array.isArray(prefixRule)) {
+    return [];
+  }
+
+  return prefixRule
+    .filter((value) => typeof value === "string")
+    .map((value) => stripMatchingQuotes(String(value).trim()).toLowerCase())
+    .filter(Boolean);
+}
+
+function extractLeadingCommandTokens(command) {
+  const tokens = tokenizeShellCommand(command);
+  const operators = new Set(["|", ";", "&&", "||"]);
+  const result = [];
+  let seenCommand = false;
+
+  for (const token of tokens) {
+    if (!token) {
+      continue;
+    }
+
+    if (!seenCommand) {
+      if (operators.has(token)) {
+        continue;
+      }
+      if (looksLikePowerShellAssignment(token)) {
+        continue;
+      }
+
+      seenCommand = true;
+      result.push(normalizeShellToken(token));
+      continue;
+    }
+
+    if (operators.has(token)) {
+      break;
+    }
+
+    result.push(normalizeShellToken(token));
+  }
+
+  return result;
+}
+
+function tokenizeShellCommand(command) {
+  const text = String(command || "");
+  const tokens = [];
+  let current = "";
+  let quote = "";
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1] || "";
+
+    if (quote) {
+      if (char === quote) {
+        quote = "";
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if ((char === "&" && next === "&") || (char === "|" && next === "|")) {
+      if (current.trim()) {
+        tokens.push(current.trim());
+      }
+      tokens.push(char + next);
+      current = "";
+      index += 1;
+      continue;
+    }
+
+    if (char === "|" || char === ";") {
+      if (current.trim()) {
+        tokens.push(current.trim());
+      }
+      tokens.push(char);
+      current = "";
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current.trim()) {
+        tokens.push(current.trim());
+        current = "";
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim()) {
+    tokens.push(current.trim());
+  }
+
+  return tokens;
+}
+
+function looksLikePowerShellAssignment(token) {
+  return /^\$[A-Za-z_][A-Za-z0-9_:.]*=/.test(String(token || ""));
+}
+
+function normalizeShellToken(token) {
+  return stripMatchingQuotes(String(token || "").trim()).toLowerCase();
+}
+
+function stripMatchingQuotes(value) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  return value;
+}
+
+function arrayStartsWith(values, prefix) {
+  if (!Array.isArray(values) || !Array.isArray(prefix) || prefix.length === 0) {
+    return false;
+  }
+
+  if (values.length < prefix.length) {
+    return false;
+  }
+
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (values[index] !== prefix[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+function handleSessionRecord(
+  state,
+  line,
+  {
+    runtime,
+    terminal,
+    emittedEventKeys,
+    pendingApprovalNotifications,
+    pendingApprovalCallIds,
+    approvedCommandRuleCache,
+  }
+) {
   let record;
   try {
     record = JSON.parse(stripUtf8Bom(line));
@@ -1030,6 +2338,28 @@ function handleSessionRecord(state, line, { runtime, terminal, emittedEventKeys 
     if (record.payload.turn_id) {
       state.turnId = record.payload.turn_id;
     }
+    if (record.payload.approval_policy) {
+      state.approvalPolicy = record.payload.approval_policy;
+    }
+    if (record.payload.sandbox_policy) {
+      state.sandboxPolicy = record.payload.sandbox_policy;
+    }
+    return;
+  }
+
+  if (
+    record.type === "response_item" &&
+    record.payload &&
+    record.payload.type === "function_call_output" &&
+    record.payload.call_id
+  ) {
+    cancelPendingApprovalNotification({
+      runtime,
+      pendingApprovalNotifications,
+      pendingApprovalCallIds,
+      callId: record.payload.call_id,
+      reason: "function_call_output",
+    });
     return;
   }
 
@@ -1046,41 +2376,64 @@ function handleSessionRecord(state, line, { runtime, terminal, emittedEventKeys 
     return;
   }
 
-  if (!shouldEmitEventKey(emittedEventKeys, event.dedupeKey)) {
+  if (event.eventType === "require_escalated_tool_call") {
+    const suppressionReason = getCodexRequireEscalatedSuppressionReason({
+      event,
+      approvalPolicy: state.approvalPolicy,
+      sandboxPolicy: state.sandboxPolicy,
+      approvedCommandRules: getApprovedCommandRules(approvedCommandRuleCache, runtime.log),
+    });
+
+    if (suppressionReason) {
+      runtime.log(
+        `suppressed session require_escalated sessionId=${event.sessionId || "unknown"} turnId=${event.turnId || ""} reason=${suppressionReason}`
+      );
+      return;
+    }
+
+    if (event.approvalDispatch === "immediate") {
+      emitCodexApprovalNotification({
+        event,
+        runtime,
+        terminal,
+        emittedEventKeys,
+        origin: "session",
+      });
+      return;
+    }
+
+    queuePendingApprovalNotification({
+      runtime,
+      pendingApprovalNotifications,
+      pendingApprovalCallIds,
+      emittedEventKeys,
+      event,
+    });
     return;
   }
 
-  runtime.log(
-    `session event matched type=${event.eventType} sessionId=${event.sessionId || "unknown"} turnId=${event.turnId || ""} cwd=${event.projectDir || ""}`
-  );
-
-  const child = emitNotification({
-    source: event.source,
-    eventName: event.eventName,
-    title: event.title,
-    message: event.message,
-    rawEventType: event.eventType,
+  emitCodexApprovalNotification({
+    event,
     runtime,
     terminal,
-  });
-
-  child.on("close", (code) => {
-    runtime.log(
-      `notify.ps1 exited code=${code} sessionId=${event.sessionId || "unknown"} eventType=${event.eventType}`
-    );
-  });
-
-  child.on("error", (error) => {
-    runtime.log(
-      `notify.ps1 spawn failed sessionId=${event.sessionId || "unknown"} eventType=${event.eventType} error=${error.message}`
-    );
+    emittedEventKeys,
+    origin: "session",
   });
 }
 
 function handleCodexTuiLogLine(
   tuiState,
   line,
-  { runtime, terminal, emittedEventKeys, sessionProjectDirs }
+  {
+    runtime,
+    terminal,
+    emittedEventKeys,
+    sessionProjectDirs,
+    sessionApprovalContexts,
+    pendingApprovalNotifications,
+    pendingApprovalCallIds,
+    approvedCommandRuleCache,
+  }
 ) {
   if (!line || !line.trim()) {
     return;
@@ -1088,39 +2441,33 @@ function handleCodexTuiLogLine(
 
   const event = buildCodexTuiApprovalEvent(tuiState, line, {
     sessionProjectDirs,
+    sessionApprovalContexts,
   });
   if (!event) {
     return;
   }
 
-  if (!shouldEmitEventKey(emittedEventKeys, event.dedupeKey)) {
+  const approvalContext = sessionApprovalContexts.get(event.sessionId || "");
+  const suppressionReason = getCodexRequireEscalatedSuppressionReason({
+    event,
+    approvalPolicy: approvalContext && approvalContext.approvalPolicy,
+    sandboxPolicy: approvalContext && approvalContext.sandboxPolicy,
+    approvedCommandRules: getApprovedCommandRules(approvedCommandRuleCache, runtime.log),
+  });
+
+  if (suppressionReason) {
+    runtime.log(
+      `suppressed tui require_escalated sessionId=${event.sessionId || "unknown"} turnId=${event.turnId || ""} reason=${suppressionReason}`
+    );
     return;
   }
 
-  runtime.log(
-    `tui approval matched type=${event.eventType} sessionId=${event.sessionId || "unknown"} cwd=${event.projectDir || ""}`
-  );
-
-  const child = emitNotification({
-    source: event.source,
-    eventName: event.eventName,
-    title: event.title,
-    message: event.message,
-    rawEventType: event.eventType,
+  queuePendingApprovalNotification({
     runtime,
-    terminal,
-  });
-
-  child.on("close", (code) => {
-    runtime.log(
-      `notify.ps1 exited code=${code} sessionId=${event.sessionId || "unknown"} eventType=${event.eventType}`
-    );
-  });
-
-  child.on("error", (error) => {
-    runtime.log(
-      `notify.ps1 spawn failed sessionId=${event.sessionId || "unknown"} eventType=${event.eventType} error=${error.message}`
-    );
+    pendingApprovalNotifications,
+    pendingApprovalCallIds,
+    emittedEventKeys,
+    event,
   });
 }
 
@@ -1154,6 +2501,9 @@ function buildCodexSessionEvent(state, record) {
         rawEventType: "require_escalated_tool_call",
       }),
       eventType: "require_escalated_tool_call",
+      approvalDispatch: "immediate",
+      callId,
+      toolArgs: args,
       dedupeKey: buildApprovalDedupeKey({
         sessionId,
         turnId,
@@ -1213,7 +2563,7 @@ function buildCodexSessionEvent(state, record) {
   }
 }
 
-function buildCodexTuiApprovalEvent(tuiState, line, { sessionProjectDirs }) {
+function buildCodexTuiApprovalEvent(tuiState, line, { sessionProjectDirs, sessionApprovalContexts }) {
   if (!line.includes("ToolCall: shell_command ") || !line.includes('"sandbox_permissions":"require_escalated"')) {
     return null;
   }
@@ -1246,6 +2596,13 @@ function buildCodexTuiApprovalEvent(tuiState, line, { sessionProjectDirs }) {
       rawEventType: "require_escalated_tool_call",
     }),
     eventType: "require_escalated_tool_call",
+    approvalDispatch: "pending",
+    approvalPolicy:
+      sessionApprovalContexts && sessionApprovalContexts.get(sessionId)
+        ? sessionApprovalContexts.get(sessionId).approvalPolicy || ""
+        : "",
+    callId: "",
+    toolArgs: args,
     dedupeKey: buildApprovalDedupeKey({
       sessionId,
       turnId,
@@ -1267,6 +2624,34 @@ function shouldEmitEventKey(emittedEventKeys, eventKey) {
 
   emittedEventKeys.set(eventKey, Date.now());
   return true;
+}
+
+function resolveApprovalTerminalContext({ sessionId, projectDir, fallbackTerminal, log }) {
+  const terminal = findSidecarTerminalContextForSession(sessionId, log);
+  if (!terminal || (!terminal.hwnd && !terminal.shellPid)) {
+    const projectFallback = findSidecarTerminalContextForProjectDir(projectDir, log);
+    if (!projectFallback || !projectFallback.hwnd) {
+      return fallbackTerminal;
+    }
+
+    return {
+      hwnd: projectFallback.hwnd,
+      shellPid: null,
+      isWindowsTerminal: false,
+    };
+  }
+
+  if (typeof log === "function") {
+    log(
+      `sidecar terminal matched sessionId=${sessionId} shellPid=${terminal.shellPid || ""} hwnd=${terminal.hwnd || ""}`
+    );
+  }
+
+  return {
+    hwnd: terminal.hwnd,
+    shellPid: terminal.shellPid,
+    isWindowsTerminal: terminal.isWindowsTerminal,
+  };
 }
 
 function pruneEmittedEventKeys(emittedEventKeys, maxSize) {
@@ -1524,10 +2909,41 @@ function safeStringify(value) {
   }
 }
 
+function getChildProcessFailure(result) {
+  if (!result) {
+    return "unknown child process failure";
+  }
+
+  if (result.error && result.error.message) {
+    return result.error.message;
+  }
+
+  const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
+  if (stderr) {
+    return stderr;
+  }
+
+  const stdout = typeof result.stdout === "string" ? result.stdout.trim() : "";
+  if (stdout) {
+    return stdout;
+  }
+
+  return `exit code ${result.status}`;
+}
+
 module.exports = {
   buildCodexSessionEvent,
   buildCodexTuiApprovalEvent,
   buildApprovalDedupeKey,
+  buildCodexSessionWatchAutostartCommand,
+  getCodexRequireEscalatedSuppressionReason,
+  handleMcpServerMessage,
+  matchesApprovedCommandRule,
   getCodexExecApprovalDescriptor,
+  parseApprovedCommandRules,
   parseJsonObjectMaybe,
+  parseRolloutTimestampFromPath,
+  pickSidecarSessionCandidate,
+  resolveSidecarSessionCandidate,
+  resolveApprovalTerminalContext,
 };
