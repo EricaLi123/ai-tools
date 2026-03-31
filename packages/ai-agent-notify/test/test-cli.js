@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Lightweight tests for claude-code-notify
+// Lightweight tests for ai-agent-notify
 // Run: node test/test-cli.js
 
 const { execFileSync } = require("child_process");
@@ -985,7 +985,7 @@ test("session watcher recognizes explicit apply_patch approval events from rollo
         turn_id: "turn-4",
         call_id: "call-4",
         approval_id: "approval-4",
-        cwd: "D:\\XAGIT\\claude-code-tools\\packages\\claude-code-notify",
+        cwd: "D:\\XAGIT\\claude-code-tools\\packages\\ai-agent-notify",
       },
     }
   );
@@ -1075,7 +1075,7 @@ test("notification source normalizer recognizes wrapper env payloads", () => {
     argv: [],
     stdinData: "",
     env: {
-      CLAUDE_CODE_NOTIFY_PAYLOAD: JSON.stringify({
+      AI_AGENT_NOTIFY_PAYLOAD: JSON.stringify({
         type: "agent-turn-complete",
         "thread-id": "thread-env-1",
         "turn-id": "turn-env-1",
@@ -1086,7 +1086,7 @@ test("notification source normalizer recognizes wrapper env payloads", () => {
   });
 
   assert(normalized.sourceId === "codex-legacy-notify");
-  assert(normalized.transport === "env:CLAUDE_CODE_NOTIFY_PAYLOAD");
+  assert(normalized.transport === "env:AI_AGENT_NOTIFY_PAYLOAD");
   assert(normalized.eventName === "Stop");
   assert(normalized.sessionId === "thread-env-1");
   assert(normalized.turnId === "turn-env-1");
@@ -1145,11 +1145,11 @@ test("start-hidden.vbs runs argv command hidden", () => {
 });
 
 test("codex wrapper forwards payload through env and then calls the installed shim", () => {
-  assert(codexWrapperContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
-  assert(codexWrapperContent.includes("claude-code-notify.cmd"));
+  assert(codexWrapperContent.includes("AI_AGENT_NOTIFY_PAYLOAD"));
+  assert(codexWrapperContent.includes("ai-agent-notify.cmd"));
   assert(codexWrapperContent.includes('%ComSpec%'));
   assert(codexWrapperContent.includes("exitCode = 9009"));
-  assert(codexWrapperContent.includes("npx.cmd @erica_s/claude-code-notify"));
+  assert(codexWrapperContent.includes("npx.cmd @erica_s/ai-agent-notify"));
   assert(codexWrapperContent.includes("shell.Run"));
 });
 
@@ -1175,21 +1175,21 @@ test("README documents codex session watcher usage", () => {
 test("README documents direct Codex notify support and limitation", () => {
   const readmeContent = read("README.md");
   assert(readmeContent.includes("agent-turn-complete"));
-  assert(readmeContent.includes('notify = ["claude-code-notify"]'));
+  assert(readmeContent.includes('notify = ["ai-agent-notify"]'));
   assert(readmeContent.includes("Recommended `~/.codex/config.toml`:"));
   assert(readmeContent.includes("less reliable on Windows"));
   assert(!readmeContent.includes("March 31, 2026"));
-  assert(!readmeContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
+  assert(!readmeContent.includes("AI_AGENT_NOTIFY_PAYLOAD"));
 });
 
 test("README documents the codex mcp sidecar companion", () => {
   const readmeContent = read("README.md");
   assert(readmeContent.includes("codex-mcp-sidecar"));
   assert(readmeContent.includes("codex-mcp-sidecar"));
-  assert(readmeContent.includes("[mcp_servers.claude_code_notify_sidecar]"));
+  assert(readmeContent.includes("[mcp_servers.ai_agent_notify_sidecar]"));
   assert(readmeContent.includes('command = "cmd.exe"'));
   assert(
-    readmeContent.includes('args = ["/d", "/c", "claude-code-notify", "codex-mcp-sidecar"]')
+    readmeContent.includes('args = ["/d", "/c", "ai-agent-notify", "codex-mcp-sidecar"]')
   );
   assert(readmeContent.includes("Do **not** set `cwd`"));
 });
@@ -1220,7 +1220,7 @@ test("README stays user-focused while internal docs remain split by topic", () =
   assert(developmentContent.includes("./windows-runtime.md"));
   assert(developmentContent.includes("./history/"));
   assert(!readmeContent.includes("codex-notify-wrapper.vbs"));
-  assert(!developmentContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
+  assert(!developmentContent.includes("AI_AGENT_NOTIFY_PAYLOAD"));
   assert(architectureContent.includes("提醒 + 定位的职责拆分"));
   assert(architectureContent.includes("通道能力矩阵"));
   assert(architectureContent.includes("当前项目里的真实数据流"));
@@ -1230,7 +1230,7 @@ test("README stays user-focused while internal docs remain split by topic", () =
   assert(approvalContent.includes("已批准命令 / 快速完成命令的误报"));
   assert(approvalContent.includes("1 秒 grace 窗口"));
   assert(approvalContent.includes("default.rules"));
-  assert(windowsRuntimeContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
+  assert(windowsRuntimeContent.includes("AI_AGENT_NOTIFY_PAYLOAD"));
   assert(windowsRuntimeContent.includes("Tab 级定位"));
   assert(historyContent.includes("os error 206"));
   assert(historyContent.includes("第二条线当前仍不能删"));

@@ -1,5 +1,5 @@
 ' Launch any command passed as argv with a hidden window.
-' Used when claude-code-notify needs to start a background watcher without a visible console.
+' Used when ai-agent-notify needs to start a background watcher without a visible console.
 
 Dim shell, command, index
 

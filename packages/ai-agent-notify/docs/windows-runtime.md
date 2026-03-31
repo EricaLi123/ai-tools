@@ -5,7 +5,7 @@
 ## 当前结论
 
 - `hwnd` / `shellPid` 的定位放在 Node 侧完成，再把结果通过环境变量传给 `notify.ps1`。
-- Windows wrapper 的 payload 转运和 `CLAUDE_CODE_NOTIFY_PAYLOAD` 约定统一放在这里，不再混在总入口文档里。
+- Windows wrapper 的 payload 转运和 `AI_AGENT_NOTIFY_PAYLOAD` 约定统一放在这里，不再混在总入口文档里。
 - Windows Terminal tab watcher 只在 WT 环境下启用；非 WT 环境只保留现有 toast / flash / open 行为。
 - 带机器环境前提的 tab 颜色演进过程单独归档，不和当前实现细节混排。
 
@@ -13,9 +13,9 @@
 
 Windows shim 层在转发 Codex legacy notify payload 时，可能遇到 argv 长度或再次展开的问题。当前 wrapper/runtime 约定是：
 
-- wrapper 可以先接住原始 payload，再通过 `CLAUDE_CODE_NOTIFY_PAYLOAD` 转交给 `bin/cli.js`
+- wrapper 可以先接住原始 payload，再通过 `AI_AGENT_NOTIFY_PAYLOAD` 转交给 `bin/cli.js`
 - `normalizeIncomingNotification()` 同时识别 stdin / argv / env 三类 transport
-- wrapper 只是 Windows 兼容性兜底，不改变最终对外入口仍然叫 `claude-code-notify`
+- wrapper 只是 Windows 兼容性兜底，不改变最终对外入口仍然叫 `ai-agent-notify`
 
 相关历史和机器实测见 [`history/codex-notify-findings.md`](./history/codex-notify-findings.md)。
 
@@ -101,7 +101,7 @@ Windows Toast 支持 `protocol`、`foreground`、`background` 三类激活，但
 
 ```xml
 <action activationType="protocol"
-        arguments="erica-s.claude-code-notify.activate-window://<hwnd>"
+        arguments="erica-s.ai-agent-notify.activate-window://<hwnd>"
         content="Open"/>
 ```
 

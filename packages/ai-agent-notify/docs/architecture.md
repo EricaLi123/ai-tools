@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-- 默认入口 `claude-code-notify` 同时收口 Claude hook stdin、Codex legacy notify argv 和 wrapper 注入的 env payload。
+- 默认入口 `ai-agent-notify` 同时收口 Claude hook stdin、Codex legacy notify argv 和 wrapper 注入的 env payload。
 - completion 继续走 `notify` 直达，不走 sidecar 这条链。
 - approval 由 `codex-session-watch` 识别，`codex-mcp-sidecar` 只补启动期 terminal context；两者职责故意分开。
 
@@ -14,7 +14,7 @@
 Default notify mode (Claude hook stdin JSON / Codex notify argv JSON / wrapper env JSON)
   → bin/cli.js
       ├─ normalizeIncomingNotification()
-      ├─ 建 log 文件: %TEMP%\claude-code-notify\session-<id>.log
+      ├─ 建 log 文件: %TEMP%\ai-agent-notify\session-<id>.log
       ├─ detectTerminalContext()
       │    ├─ scripts/find-hwnd.ps1 -IncludeShellPid
       │    ├─ scripts/get-shell-pid.ps1
@@ -32,7 +32,7 @@ Codex MCP sidecar
 
 ### 为什么默认入口要同时兼容 stdin / argv / env
 
-Claude Code 的 hook 习惯是把 JSON 通过 stdin 传进来；Codex 旧版 `notify` 则把 JSON payload 作为最后一个 argv 追加给命令。Windows wrapper 场景下，还会有“先收 payload、再改走 env 转运”的需求。当前项目把三种 transport 统一收口到 `normalizeIncomingNotification()`，这样对外只需要一个命令名 `claude-code-notify`，不必为 Claude / Codex 维护多套入口。
+Claude Code 的 hook 习惯是把 JSON 通过 stdin 传进来；Codex 旧版 `notify` 则把 JSON payload 作为最后一个 argv 追加给命令。Windows wrapper 场景下，还会有“先收 payload、再改走 env 转运”的需求。当前项目把三种 transport 统一收口到 `normalizeIncomingNotification()`，这样对外只需要一个命令名 `ai-agent-notify`，不必为 Claude / Codex 维护多套入口。
 
 ## 官方约束
 
@@ -58,7 +58,7 @@ Claude Code 的 hook 习惯是把 JSON 通过 stdin 传进来；Codex 旧版 `no
 Completion:
   Codex turn complete
     ├─ 触发 legacy notify
-    ├─ claude-code-notify 当场解析 completion payload
+    ├─ ai-agent-notify 当场解析 completion payload
     ├─ cli.js 直接探测当前终端上下文
     └─ notify.ps1 发 toast / flash / open
 

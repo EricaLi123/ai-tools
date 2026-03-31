@@ -2,7 +2,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SIDECAR_STATE_DIR = path.join(os.tmpdir(), "claude-code-notify", "codex-mcp-sidecar");
+const SIDECAR_STATE_DIR = path.join(os.tmpdir(), "ai-agent-notify", "codex-mcp-sidecar");
 const STALE_UNRESOLVED_RECORD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const STALE_RESOLVED_RECORD_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 

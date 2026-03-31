@@ -139,7 +139,7 @@ $escapedMessage = [System.Security.SecurityElement]::Escape($Message)
 
 $actionsXml = ''
 if ($hwnd) {
-    $activateUrl = "erica-s.claude-code-notify.activate-window://$hwnd"
+    $activateUrl = "erica-s.ai-agent-notify.activate-window://$hwnd"
     $actionsXml = "<actions><action activationType=`"protocol`" arguments=`"$activateUrl`" content=`"Open`"/></actions>"
 }
 

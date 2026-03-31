@@ -17,13 +17,13 @@ Set shell = CreateObject("WScript.Shell")
 Set env = shell.Environment("Process")
 comspec = shell.ExpandEnvironmentStrings("%ComSpec%")
 
-env("CLAUDE_CODE_NOTIFY_PAYLOAD") = payload
-command = comspec & " /d /c claude-code-notify.cmd"
+env("AI_AGENT_NOTIFY_PAYLOAD") = payload
+command = comspec & " /d /c ai-agent-notify.cmd"
 exitCode = shell.Run(command, 0, True)
 If exitCode = 9009 Then
-    command = comspec & " /d /c npx.cmd @erica_s/claude-code-notify"
+    command = comspec & " /d /c npx.cmd @erica_s/ai-agent-notify"
     exitCode = shell.Run(command, 0, True)
 End If
-env("CLAUDE_CODE_NOTIFY_PAYLOAD") = ""
+env("AI_AGENT_NOTIFY_PAYLOAD") = ""
 
 WScript.Quit exitCode

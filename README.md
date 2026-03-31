@@ -1,10 +1,10 @@
-# claude-code-tools
+# ai-tools
 
-A collection of tools for Claude Code.
+A collection of AI agent workflow tools.
 
 ## Packages
 
 | Package | Description |
 |---------|-------------|
-| [claude-code-notify](packages/claude-code-notify/) | Windows Toast notifications + taskbar flash for Claude Code |
+| [ai-agent-notify](packages/ai-agent-notify/) | Windows Toast notifications + taskbar flash for Claude Code and Codex |
 | [claude-explorer](packages/claude-explorer/) | Read, list and search local Claude Code data files (.jsonl, config, settings) |

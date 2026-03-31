@@ -17,7 +17,7 @@ const {
 } = require("../lib/notification-sources");
 
 const PACKAGE_VERSION = readPackageVersion();
-const LOG_DIR = path.join(os.tmpdir(), "claude-code-notify");
+const LOG_DIR = path.join(os.tmpdir(), "ai-agent-notify");
 const IS_DEV = !fs.existsSync(path.join(__dirname, "..", ".published"));
 const SIDECAR_SESSION_RESOLUTION_POLL_MS = 1000;
 const SIDECAR_SESSION_RESOLUTION_TIMEOUT_MS = 90 * 1000;
@@ -62,7 +62,7 @@ async function runCli() {
 
 function ensureWindows() {
   if (process.platform !== "win32") {
-    throw new Error("claude-code-notify currently only supports Windows.");
+    throw new Error("ai-agent-notify currently only supports Windows.");
   }
 }
 
@@ -93,9 +93,9 @@ function printHelp() {
   process.stdout.write(
     [
       "Usage:",
-      "  claude-code-notify",
-      "  claude-code-notify codex-session-watch [--sessions-dir <path>] [--tui-log <path>] [--poll-ms <ms>]",
-      "  claude-code-notify codex-mcp-sidecar",
+      "  ai-agent-notify",
+      "  ai-agent-notify codex-session-watch [--sessions-dir <path>] [--tui-log <path>] [--poll-ms <ms>]",
+      "  ai-agent-notify codex-mcp-sidecar",
       "",
       "Modes:",
       "  default      Read notification JSON from stdin or argv and show a notification",
@@ -683,7 +683,7 @@ function handleMcpServerMessage(message, log) {
           tools: {},
         },
         serverInfo: {
-          name: "claude-code-notify",
+          name: "ai-agent-notify",
           version: PACKAGE_VERSION,
         },
       });

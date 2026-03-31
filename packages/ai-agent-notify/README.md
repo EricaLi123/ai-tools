@@ -1,4 +1,4 @@
-# claude-code-notify
+# ai-agent-notify
 
 Windows Toast notifications for Claude Code and Codex.
 
@@ -26,9 +26,9 @@ solves two core problems:
 
 ```bash
 # Recommended: global install via volta or npm
-volta install @erica_s/claude-code-notify
+volta install @erica_s/ai-agent-notify
 # or
-npm install -g @erica_s/claude-code-notify
+npm install -g @erica_s/ai-agent-notify
 ```
 
 ## Claude Code
@@ -38,13 +38,13 @@ Add to your `~/.claude/settings.json`:
 ```json
 {
     "hooks": {
-        "Stop": [{ "hooks": [{ "type": "command", "command": "claude-code-notify", "async": true }] }],
-        "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "claude-code-notify", "async": true }] }]
+        "Stop": [{ "hooks": [{ "type": "command", "command": "ai-agent-notify", "async": true }] }],
+        "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "ai-agent-notify", "async": true }] }]
     }
 }
 ```
 
-- Prefer a global install. `npx --yes @erica_s/claude-code-notify` is less
+- Prefer a global install. `npx --yes @erica_s/ai-agent-notify` is less
   reliable in async hooks.
 - The click-to-activate protocol is registered automatically on install.
 
@@ -53,28 +53,28 @@ Add to your `~/.claude/settings.json`:
 Recommended `~/.codex/config.toml`:
 
 ```toml
-notify = ["claude-code-notify"]
+notify = ["ai-agent-notify"]
 
-[mcp_servers.claude_code_notify_sidecar]
+[mcp_servers.ai_agent_notify_sidecar]
 command = "cmd.exe"
-args = ["/d", "/c", "claude-code-notify", "codex-mcp-sidecar"]
+args = ["/d", "/c", "ai-agent-notify", "codex-mcp-sidecar"]
 required = false
 startup_timeout_sec = 5
 ```
 
-- `notify = ["claude-code-notify"]` covers completion events such as
+- `notify = ["ai-agent-notify"]` covers completion events such as
   `agent-turn-complete`.
 - `codex-session-watch` is the main path for approval reminders.
 - `codex-mcp-sidecar` will usually auto-start `codex-session-watch`.
 - Do **not** set `cwd` on the MCP server entry above.
 - After changing Codex `notify`, restart Codex and retest in a fresh TUI
   session.
-- Prefer a global install. `npx.cmd @erica_s/claude-code-notify` is less reliable on Windows.
+- Prefer a global install. `npx.cmd @erica_s/ai-agent-notify` is less reliable on Windows.
 
 If you are not using the MCP sidecar, start the watcher yourself:
 
 ```bash
-claude-code-notify codex-session-watch
+ai-agent-notify codex-session-watch
 ```
 
 Optional flags:

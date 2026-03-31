@@ -1,5 +1,5 @@
-# 激活窗口脚本 - 由 claude-code-notify 协议处理器调用
-# 参数: 协议 URL，格式为 erica-s.claude-code-notify.activate-window://<窗口句柄>
+# 激活窗口脚本 - 由 ai-agent-notify 协议处理器调用
+# 参数: 协议 URL，格式为 erica-s.ai-agent-notify.activate-window://<窗口句柄>
 
 $url = $args[0]
 $handleString = $url -replace '^[^:]+://', '' -replace '[/\\"]', ''

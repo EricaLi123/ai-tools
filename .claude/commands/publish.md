@@ -1,9 +1,9 @@
 ---
-description: 发布 claude-code-notify 包到 npm。用法：/publish
+description: 发布 ai-agent-notify 包到 npm。用法：/publish
 allowed-tools: Bash, Read, Edit
 ---
 
-发布 `packages/claude-code-notify`。
+发布 `packages/ai-agent-notify`。
 
 **重要原则：每个步骤执行后立即检查结果。一旦遇到任何错误、异常或需要决策的情况，不要自行修复或假设，使用 AskUserQuestion 工具向用户说明情况并询问如何处理，等待用户回复后再继续。如果用户未作出明确指示，立即中断，不要继续后续步骤。**
 
@@ -16,9 +16,12 @@ allowed-tools: Bash, Read, Edit
 ## 步骤 2：展示自上次发布以来的改动
 
 ```bash
-git log --oneline $(git describe --tags --match "notify-v*" --abbrev=0)..HEAD -- packages/claude-code-notify/
-git diff $(git describe --tags --match "notify-v*" --abbrev=0)..HEAD -- packages/claude-code-notify/
+git log --oneline $(git describe --tags --match "ai-agent-notify-v*" --abbrev=0)..HEAD -- packages/ai-agent-notify/
+git diff $(git describe --tags --match "ai-agent-notify-v*" --abbrev=0)..HEAD -- packages/ai-agent-notify/
 ```
+
+如果还没有 `ai-agent-notify-v*` tag，把本次视为首个 `ai-agent-notify`
+发布版本，手动检查 `packages/ai-agent-notify/` 下的当前改动。
 
 ## 步骤 3：判断版本类型并 Bump 版本号
 
@@ -30,12 +33,12 @@ git diff $(git describe --tags --match "notify-v*" --abbrev=0)..HEAD -- packages
 
 如果无法确定，使用 AskUserQuestion 工具说明原因并询问用户。
 
-读取 `packages/claude-code-notify/package.json`，计算新版本号后更新 `version` 字段。
+读取 `packages/ai-agent-notify/package.json`，计算新版本号后更新 `version` 字段。
 
 ## 步骤 4：发布到 npm
 
 ```bash
-cd packages/claude-code-notify && npm publish --access=public
+cd packages/ai-agent-notify && npm publish --access=public
 ```
 
 ## 步骤 5：Git commit
@@ -45,7 +48,7 @@ cd packages/claude-code-notify && npm publish --access=public
 ## 步骤 6：打 tag
 
 ```bash
-git tag notify-vX.X.X
+git tag ai-agent-notify-vX.X.X
 ```
 
 ## 步骤 7：Push

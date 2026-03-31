@@ -7,7 +7,7 @@ const CODEX_EVENT_NAME_BY_TYPE = {
   "request-permissions": "PermissionRequest",
   "apply-patch-approval-request": "PermissionRequest",
 };
-const ENV_PAYLOAD_KEYS = ["CLAUDE_CODE_NOTIFY_PAYLOAD"];
+const ENV_PAYLOAD_KEYS = ["AI_AGENT_NOTIFY_PAYLOAD"];
 
 function normalizeIncomingNotification({ argv = [], stdinData = "", env = {} } = {}) {
   const candidates = getIncomingPayloadCandidates(argv, stdinData, env);
