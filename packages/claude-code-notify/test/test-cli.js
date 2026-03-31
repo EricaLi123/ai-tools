@@ -1169,10 +1169,9 @@ test("watcher resets through console attachment plus standard streams", () => {
 test("README documents codex session watcher usage", () => {
   const readmeContent = read("README.md");
   assert(readmeContent.includes("codex-session-watch"));
-  assert(readmeContent.includes("auto-start it in the background"));
-  assert(readmeContent.includes("codex-tui.log"));
+  assert(readmeContent.includes("auto-start `codex-session-watch`"));
+  assert(readmeContent.includes("--tui-log <path>"));
   assert(readmeContent.includes("approval reminders"));
-  assert(readmeContent.includes("false positives"));
   assert(readmeContent.includes(DEV_DOCS_URL));
   assert(!readmeContent.includes("codex-watch"));
 });
@@ -1181,18 +1180,17 @@ test("README documents direct Codex notify support and limitation", () => {
   const readmeContent = read("README.md");
   assert(readmeContent.includes("agent-turn-complete"));
   assert(readmeContent.includes('notify = ["claude-code-notify"]'));
-  assert(readmeContent.includes("Use this in `~/.codex/config.toml`:"));
-  assert(readmeContent.includes("Windows Terminal tab highlight"));
-  assert(readmeContent.includes("15 days"));
-  assert(readmeContent.includes("It cannot signal approval"));
+  assert(readmeContent.includes("Recommended `~/.codex/config.toml`:"));
+  assert(readmeContent.includes("cannot signal approval requests"));
+  assert(readmeContent.includes("less reliable on Windows"));
+  assert(!readmeContent.includes("March 31, 2026"));
   assert(!readmeContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
 });
 
 test("README documents the codex mcp sidecar companion", () => {
   const readmeContent = read("README.md");
-  assert(readmeContent.includes("Codex MCP Sidecar"));
   assert(readmeContent.includes("codex-mcp-sidecar"));
-  assert(readmeContent.includes("hidden-launch `codex-session-watch`"));
+  assert(readmeContent.includes("codex-mcp-sidecar"));
   assert(readmeContent.includes("[mcp_servers.claude_code_notify_sidecar]"));
   assert(readmeContent.includes('command = "cmd.exe"'));
   assert(
@@ -1200,6 +1198,16 @@ test("README documents the codex mcp sidecar companion", () => {
   );
   assert(readmeContent.includes("Do **not** set `cwd`"));
   assert(readmeContent.includes("Toast-only behavior"));
+});
+
+test("README states the core reminder and return-to-session problem", () => {
+  const readmeContent = read("README.md");
+  assert(readmeContent.includes("## Problem It Solves"));
+  assert(readmeContent.includes("solves two core problems"));
+  assert(readmeContent.includes("### 1. Reminder"));
+  assert(readmeContent.includes("Taskbar flashing"));
+  assert(readmeContent.includes("### 2. Return To The Session"));
+  assert(readmeContent.includes("activates the target window"));
 });
 
 test("README stays user-focused while development docs are split by topic", () => {
