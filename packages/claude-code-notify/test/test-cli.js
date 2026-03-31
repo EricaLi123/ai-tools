@@ -44,6 +44,28 @@ function read(relPath) {
   return fs.readFileSync(path.join(ROOT, relPath), "utf8");
 }
 
+function assertLocalMarkdownLinksExist(relPath) {
+  const absPath = path.join(ROOT, relPath);
+  const content = fs.readFileSync(absPath, "utf8");
+  const linkPattern = /\[[^\]]+\]\(([^)]+)\)/g;
+  let match;
+
+  while ((match = linkPattern.exec(content)) !== null) {
+    const target = match[1].trim();
+    if (!target || target.startsWith("http://") || target.startsWith("https://") || target.startsWith("mailto:")) {
+      continue;
+    }
+
+    const withoutFragment = target.split("#")[0];
+    if (!withoutFragment) {
+      continue;
+    }
+
+    const resolved = path.resolve(path.dirname(absPath), withoutFragment);
+    assert(fs.existsSync(resolved), `${relPath} broken link: ${target}`);
+  }
+}
+
 function normalizeTestPath(value) {
   return path.resolve(value).replace(/\\/g, "/").toLowerCase();
 }
@@ -74,6 +96,14 @@ console.log("\n--- File structure ---");
   "scripts/start-hidden.vbs",
   "scripts/start-tab-color-watcher.ps1",
   "scripts/tab-color-watcher.ps1",
+  "docs/development.md",
+  "docs/architecture.md",
+  "docs/codex-approval.md",
+  "docs/windows-runtime.md",
+  "docs/history/README.md",
+  "docs/history/codex-notify-findings.md",
+  "docs/history/codex-approval-notification-session-2026-03-18.md",
+  "docs/history/tab-color-history.md",
 ].forEach((relPath) => {
   test(`${relPath} exists`, () => {
     assert(fs.existsSync(path.join(ROOT, relPath)), `${relPath} missing`);
@@ -83,6 +113,8 @@ console.log("\n--- File structure ---");
 console.log("\n--- package.json ---");
 
 const pkg = JSON.parse(read("package.json"));
+const DEV_DOCS_URL =
+  "https://github.com/EricaLi123/claude-code-tools/blob/main/packages/claude-code-notify/docs/development.md";
 
 test("postinstall script points to node postinstall.js", () => {
   assert(pkg.scripts && pkg.scripts.postinstall === "node postinstall.js");
@@ -1173,7 +1205,7 @@ test("README documents codex session watcher usage", () => {
   assert(readmeContent.includes("codex-tui.log"));
   assert(readmeContent.includes("approval reminders"));
   assert(readmeContent.includes("false positives"));
-  assert(readmeContent.includes("DEVELOPMENT.md"));
+  assert(readmeContent.includes(DEV_DOCS_URL));
 });
 
 test("README documents direct Codex notify support and limitation", () => {
@@ -1201,26 +1233,49 @@ test("README documents the codex mcp sidecar companion", () => {
   assert(readmeContent.includes("Toast-only behavior"));
 });
 
-test("README stays user-focused while DEVELOPMENT keeps the internal design details", () => {
+test("README stays user-focused while development docs are split by topic", () => {
   const readmeContent = read("README.md");
-  const developmentContent = read("DEVELOPMENT.md");
+  const developmentContent = read("docs/development.md");
+  const architectureContent = read("docs/architecture.md");
+  const approvalContent = read("docs/codex-approval.md");
+  const windowsRuntimeContent = read("docs/windows-runtime.md");
+  const historyContent = read("docs/history/codex-notify-findings.md");
   assert(!readmeContent.includes("Reminder + Localization Responsibilities"));
   assert(!readmeContent.includes("npm link"));
   assert(!readmeContent.includes("node postinstall.js"));
   assert(readmeContent.includes("For implementation details and design trade-offs"));
-  assert(readmeContent.includes("DEVELOPMENT.md"));
+  assert(readmeContent.includes(DEV_DOCS_URL));
   assert(developmentContent.includes("README 只保留安装、配置、常用命令"));
+  assert(developmentContent.includes("./architecture.md"));
+  assert(developmentContent.includes("./codex-approval.md"));
+  assert(developmentContent.includes("./windows-runtime.md"));
+  assert(developmentContent.includes("./history/"));
   assert(!readmeContent.includes("codex-notify-wrapper.vbs"));
-  assert(developmentContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
-  assert(developmentContent.includes("提醒 + 定位的职责拆分"));
-  assert(developmentContent.includes("通道能力矩阵"));
-  assert(developmentContent.includes("当前项目里的真实数据流"));
-  assert(developmentContent.includes("completion 不走 sidecar 这条链"));
-  assert(developmentContent.includes("为什么不把 approval 定位完全交给 MCP server"));
-  assert(developmentContent.includes("已批准命令 / 快速完成命令的误报"));
-  assert(developmentContent.includes("1 秒 grace 窗口"));
-  assert(developmentContent.includes("tui.notification_method"));
-  assert(developmentContent.includes("default.rules"));
+  assert(!developmentContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
+  assert(architectureContent.includes("提醒 + 定位的职责拆分"));
+  assert(architectureContent.includes("通道能力矩阵"));
+  assert(architectureContent.includes("当前项目里的真实数据流"));
+  assert(architectureContent.includes("completion 不走 sidecar 这条链"));
+  assert(architectureContent.includes("tui.notification_method"));
+  assert(approvalContent.includes("为什么不把 approval 定位完全交给 MCP server"));
+  assert(approvalContent.includes("已批准命令 / 快速完成命令的误报"));
+  assert(approvalContent.includes("1 秒 grace 窗口"));
+  assert(approvalContent.includes("default.rules"));
+  assert(windowsRuntimeContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
+  assert(windowsRuntimeContent.includes("Tab 级定位"));
+  assert(historyContent.includes("os error 206"));
+  assert(historyContent.includes("第二条线当前仍不能删"));
+});
+
+test("README and development docs only use valid local markdown links", () => {
+  [
+    "README.md",
+    "docs/development.md",
+    "docs/architecture.md",
+    "docs/codex-approval.md",
+    "docs/windows-runtime.md",
+    "docs/history/README.md",
+  ].forEach(assertLocalMarkdownLinksExist);
 });
 
 console.log("\n--- Smoke ---");

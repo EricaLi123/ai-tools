@@ -110,7 +110,7 @@ Practical notes:
   the approval reminder still fires but may fall back to Toast-only behavior.
 
 For implementation details and design trade-offs, see
-[`DEVELOPMENT.md`](./DEVELOPMENT.md).
+[`docs/development.md`](https://github.com/EricaLi123/claude-code-tools/blob/main/packages/claude-code-notify/docs/development.md).
 
 ## Codex Session Watcher (Recommended For Approval Notifications)
 
@@ -160,7 +160,7 @@ Practical notes:
 - Some very fast or already-approved escalation events may be suppressed to
   reduce false positives.
 - For the detailed signal heuristics and suppression rules, see
-  [`DEVELOPMENT.md`](./DEVELOPMENT.md).
+  [`docs/development.md`](https://github.com/EricaLi123/claude-code-tools/blob/main/packages/claude-code-notify/docs/development.md).
 
 > **Note:** by itself, session-watcher mode runs outside the original Codex
 > terminal process, so it may have to fall back to Toast-only behavior. With
@@ -207,7 +207,7 @@ this project's end-to-end validation, a watcher that launched its own
 originating in other Codex sessions. For stock Codex CLI usage, prefer
 `codex-session-watch`.
 
-For protocol details and internal flow, see [`DEVELOPMENT.md`](./DEVELOPMENT.md).
+For protocol details and internal flow, see [`docs/development.md`](https://github.com/EricaLi123/claude-code-tools/blob/main/packages/claude-code-notify/docs/development.md).
 
 ## Requirements
 
