@@ -21,7 +21,7 @@ env("AI_AGENT_NOTIFY_PAYLOAD") = payload
 command = comspec & " /d /c ai-agent-notify.cmd"
 exitCode = shell.Run(command, 0, True)
 If exitCode = 9009 Then
-    command = comspec & " /d /c npx.cmd @erica_s/ai-agent-notify"
+    command = comspec & " /d /c npx.cmd @erica-s/ai-agent-notify"
     exitCode = shell.Run(command, 0, True)
 End If
 env("AI_AGENT_NOTIFY_PAYLOAD") = ""

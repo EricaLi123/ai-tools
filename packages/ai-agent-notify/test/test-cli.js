@@ -1149,7 +1149,7 @@ test("codex wrapper forwards payload through env and then calls the installed sh
   assert(codexWrapperContent.includes("ai-agent-notify.cmd"));
   assert(codexWrapperContent.includes('%ComSpec%'));
   assert(codexWrapperContent.includes("exitCode = 9009"));
-  assert(codexWrapperContent.includes("npx.cmd @erica_s/ai-agent-notify"));
+  assert(codexWrapperContent.includes("npx.cmd @erica-s/ai-agent-notify"));
   assert(codexWrapperContent.includes("shell.Run"));
 });
 

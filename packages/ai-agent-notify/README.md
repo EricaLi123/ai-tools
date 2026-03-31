@@ -26,9 +26,9 @@ solves two core problems:
 
 ```bash
 # Recommended: global install via volta or npm
-volta install @erica_s/ai-agent-notify
+volta install @erica-s/ai-agent-notify
 # or
-npm install -g @erica_s/ai-agent-notify
+npm install -g @erica-s/ai-agent-notify
 ```
 
 ## Claude Code
@@ -44,7 +44,7 @@ Add to your `~/.claude/settings.json`:
 }
 ```
 
-- Prefer a global install. `npx --yes @erica_s/ai-agent-notify` is less
+- Prefer a global install. `npx --yes @erica-s/ai-agent-notify` is less
   reliable in async hooks.
 - The click-to-activate protocol is registered automatically on install.
 
@@ -69,7 +69,7 @@ startup_timeout_sec = 5
 - Do **not** set `cwd` on the MCP server entry above.
 - After changing Codex `notify`, restart Codex and retest in a fresh TUI
   session.
-- Prefer a global install. `npx.cmd @erica_s/ai-agent-notify` is less reliable on Windows.
+- Prefer a global install. `npx.cmd @erica-s/ai-agent-notify` is less reliable on Windows.
 
 If you are not using the MCP sidecar, start the watcher yourself:
 

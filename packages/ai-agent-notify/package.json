@@ -1,5 +1,5 @@
 {
-  "name": "@erica_s/ai-agent-notify",
+  "name": "@erica-s/ai-agent-notify",
   "version": "2.1.5",
   "description": "Windows Toast notifications for Claude Code and Codex",
   "bin": {
