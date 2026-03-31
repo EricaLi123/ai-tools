@@ -25,6 +25,7 @@ const SIDECAR_SESSION_RESOLUTION_MAX_PAST_MS = 30 * 1000;
 const SIDECAR_SESSION_RESOLUTION_MAX_FUTURE_MS = 10 * 60 * 1000;
 const CODEX_APPROVAL_NOTIFY_GRACE_MS = 1000;
 const CODEX_READ_ONLY_APPROVAL_NOTIFY_GRACE_MS = 5 * 1000;
+const CODEX_APPROVAL_BATCH_WINDOW_MS = 500;
 const RECENT_REQUIRE_ESCALATED_TTL_MS = 30 * 60 * 1000;
 const SESSION_APPROVAL_CONFIRM_LOOKBACK_MS = 5 * 60 * 1000;
 const SESSION_APPROVAL_GRANT_TTL_MS = 30 * 60 * 1000;
@@ -2105,6 +2106,77 @@ function cancelPendingApprovalNotificationsBySuppression({
   return cancelled;
 }
 
+function buildPendingApprovalBatchKey(event) {
+  if (!event) {
+    return "";
+  }
+
+  if (event.eventType === "require_escalated_tool_call") {
+    return [event.sessionId || "unknown", event.turnId || "unknown", event.eventType].join("|");
+  }
+
+  return event.dedupeKey || [event.sessionId || "unknown", event.turnId || "unknown", event.eventType || ""].join("|");
+}
+
+function shouldBatchPendingApproval(representative, pending) {
+  if (!representative || !pending) {
+    return false;
+  }
+
+  if (buildPendingApprovalBatchKey(representative) !== buildPendingApprovalBatchKey(pending)) {
+    return false;
+  }
+
+  if (representative.eventType !== "require_escalated_tool_call") {
+    return representative.dedupeKey === pending.dedupeKey;
+  }
+
+  const representativePendingSince = Number.isFinite(representative.pendingSinceMs)
+    ? representative.pendingSinceMs
+    : 0;
+  const pendingSince = Number.isFinite(pending.pendingSinceMs)
+    ? pending.pendingSinceMs
+    : representativePendingSince;
+
+  return Math.abs(pendingSince - representativePendingSince) <= CODEX_APPROVAL_BATCH_WINDOW_MS;
+}
+
+function drainPendingApprovalBatch({
+  pendingApprovalNotifications,
+  pendingApprovalCallIds,
+  representativeKey,
+}) {
+  if (!pendingApprovalNotifications || !representativeKey) {
+    return { batchKey: "", count: 0, representative: null };
+  }
+
+  const representative = pendingApprovalNotifications.get(representativeKey);
+  if (!representative) {
+    return { batchKey: "", count: 0, representative: null };
+  }
+
+  const batchKey = buildPendingApprovalBatchKey(representative);
+  const removed = [];
+
+  Array.from(pendingApprovalNotifications.entries()).forEach(([key, pending]) => {
+    if (!shouldBatchPendingApproval(representative, pending)) {
+      return;
+    }
+
+    pendingApprovalNotifications.delete(key);
+    if (pending.callId) {
+      pendingApprovalCallIds.delete(pending.callId);
+    }
+    removed.push({ key, pending });
+  });
+
+  return {
+    batchKey,
+    count: removed.length,
+    representative,
+  };
+}
+
 function flushPendingApprovalNotifications({
   runtime,
   terminal,
@@ -2114,17 +2186,30 @@ function flushPendingApprovalNotifications({
 }) {
   const now = Date.now();
   Array.from(pendingApprovalNotifications.entries()).forEach(([key, pending]) => {
+    if (!pendingApprovalNotifications.has(key)) {
+      return;
+    }
     if (pending.deadlineMs > now) {
       return;
     }
 
-    pendingApprovalNotifications.delete(key);
-    if (pending.callId) {
-      pendingApprovalCallIds.delete(pending.callId);
+    const batch = drainPendingApprovalBatch({
+      pendingApprovalNotifications,
+      pendingApprovalCallIds,
+      representativeKey: key,
+    });
+    if (!batch.representative) {
+      return;
+    }
+
+    if (batch.count > 1) {
+      runtime.log(
+        `grouped approval batch sessionId=${batch.representative.sessionId || "unknown"} turnId=${batch.representative.turnId || ""} batchSize=${batch.count}`
+      );
     }
 
     emitCodexApprovalNotification({
-      event: pending,
+      event: batch.representative,
       runtime,
       terminal,
       emittedEventKeys,
@@ -3259,7 +3344,18 @@ function resolveApprovalTerminalContext({ sessionId, projectDir, fallbackTermina
   if (!terminal || (!terminal.hwnd && !terminal.shellPid)) {
     const projectFallback = findSidecarTerminalContextForProjectDir(projectDir, log);
     if (!projectFallback || !projectFallback.hwnd) {
+      if (typeof log === "function") {
+        log(
+          `approval terminal fallback used sessionId=${sessionId || "unknown"} projectDir=${projectDir || ""} reason=no_sidecar_match`
+        );
+      }
       return fallbackTerminal;
+    }
+
+    if (typeof log === "function") {
+      log(
+        `approval terminal project fallback used sessionId=${sessionId || "unknown"} projectDir=${projectDir || ""} hwnd=${projectFallback.hwnd || ""}`
+      );
     }
 
     return {
@@ -3563,9 +3659,11 @@ module.exports = {
   buildCodexSessionEvent,
   buildCodexTuiApprovalEvent,
   buildApprovalDedupeKey,
+  buildPendingApprovalBatchKey,
   buildCodexSessionWatchAutostartCommand,
   cancelPendingApprovalNotificationsBySuppression,
   confirmSessionApprovalForRecentEvents,
+  drainPendingApprovalBatch,
   extractCommandApprovalRoots,
   getCodexApprovalNotifyGraceMs,
   getCodexRequireEscalatedSuppressionReason,
@@ -3581,4 +3679,5 @@ module.exports = {
   pickSidecarSessionCandidate,
   resolveSidecarSessionCandidate,
   resolveApprovalTerminalContext,
+  shouldBatchPendingApproval,
 };

@@ -3,7 +3,8 @@ const os = require("os");
 const path = require("path");
 
 const SIDECAR_STATE_DIR = path.join(os.tmpdir(), "claude-code-notify", "codex-mcp-sidecar");
-const STALE_RECORD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const STALE_UNRESOLVED_RECORD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const STALE_RESOLVED_RECORD_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function getSidecarStateDir() {
   return SIDECAR_STATE_DIR;
@@ -71,8 +72,13 @@ function readAllSidecarRecords(log) {
 function pruneStaleSidecarRecords(log) {
   const now = Date.now();
   readAllSidecarRecords(log).forEach((record) => {
-    const startedAtMs = parseTime(record.startedAt);
-    const isTooOld = !startedAtMs || now - startedAtMs > STALE_RECORD_MAX_AGE_MS;
+    const referenceTimeMs = parseTime(
+      record.lastMatchedAt || record.updatedAt || record.resolvedAt || record.startedAt
+    );
+    const maxAgeMs = record.sessionId
+      ? STALE_RESOLVED_RECORD_MAX_AGE_MS
+      : STALE_UNRESOLVED_RECORD_MAX_AGE_MS;
+    const isTooOld = !referenceTimeMs || now - referenceTimeMs > maxAgeMs;
     if (isTooOld) {
       deleteSidecarRecord(record.recordId);
     }
@@ -94,7 +100,10 @@ function findSidecarTerminalContextForSession(sessionId, log) {
     return null;
   }
 
-  const match = matches[0];
+  const match = writeSidecarRecord({
+    ...matches[0],
+    lastMatchedAt: new Date().toISOString(),
+  });
   return {
     recordId: match.recordId,
     cwd: match.cwd || "",
@@ -179,6 +188,8 @@ function normalizeRecord(record) {
   normalized.updatedAt = now;
   normalized.resolvedAt =
     typeof normalized.resolvedAt === "string" ? normalized.resolvedAt : "";
+  normalized.lastMatchedAt =
+    typeof normalized.lastMatchedAt === "string" ? normalized.lastMatchedAt : "";
 
   return normalized;
 }

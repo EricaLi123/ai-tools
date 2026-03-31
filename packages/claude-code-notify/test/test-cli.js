@@ -345,6 +345,82 @@ test("sidecar prune keeps fresh resolved records even when the sidecar pid is go
   }
 });
 
+test("sidecar prune keeps older exact session records for long-lived sessions", () => {
+  const recordId = `test-sidecar-long-session-${process.pid}-${Date.now()}`;
+  const sessionId = `test-session-long-${Date.now()}`;
+  const recordPath = path.join(sidecarState.getSidecarStateDir(), `${recordId}.json`);
+  const oldIso = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    sidecarState.writeSidecarRecord({
+      recordId,
+      pid: 999999,
+      parentPid: process.ppid,
+      cwd: "D:\\XAGIT\\claude-code-tools",
+      sessionId,
+      startedAt: oldIso,
+      resolvedAt: oldIso,
+      hwnd: 6543,
+      shellPid: 7654,
+      isWindowsTerminal: true,
+    });
+
+    const persisted = JSON.parse(fs.readFileSync(recordPath, "utf8"));
+    persisted.startedAt = oldIso;
+    persisted.updatedAt = oldIso;
+    persisted.resolvedAt = oldIso;
+    persisted.lastMatchedAt = "";
+    fs.writeFileSync(recordPath, JSON.stringify(persisted, null, 2), "utf8");
+
+    sidecarState.pruneStaleSidecarRecords();
+
+    const terminal = sidecarState.findSidecarTerminalContextForSession(sessionId);
+    assert(terminal, "expected exact session record to survive prune");
+    assert(terminal.hwnd === 6543);
+    assert(terminal.shellPid === 7654);
+  } finally {
+    sidecarState.deleteSidecarRecord(recordId);
+  }
+});
+
+test("sidecar exact session matches refresh persisted record freshness", () => {
+  const recordId = `test-sidecar-refresh-${process.pid}-${Date.now()}`;
+  const sessionId = `test-session-refresh-${Date.now()}`;
+  const recordPath = path.join(sidecarState.getSidecarStateDir(), `${recordId}.json`);
+  const oldIso = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    sidecarState.writeSidecarRecord({
+      recordId,
+      pid: 999999,
+      parentPid: process.ppid,
+      cwd: "D:\\XAGIT\\claude-code-tools",
+      sessionId,
+      startedAt: oldIso,
+      resolvedAt: oldIso,
+      hwnd: 7654,
+      shellPid: 8765,
+      isWindowsTerminal: true,
+    });
+
+    const persisted = JSON.parse(fs.readFileSync(recordPath, "utf8"));
+    persisted.startedAt = oldIso;
+    persisted.updatedAt = oldIso;
+    persisted.resolvedAt = oldIso;
+    persisted.lastMatchedAt = "";
+    fs.writeFileSync(recordPath, JSON.stringify(persisted, null, 2), "utf8");
+
+    const terminal = sidecarState.findSidecarTerminalContextForSession(sessionId);
+    assert(terminal, "expected exact session lookup to succeed");
+
+    const refreshed = JSON.parse(fs.readFileSync(recordPath, "utf8"));
+    assert(Date.parse(refreshed.updatedAt) > Date.parse(oldIso));
+    assert(Date.parse(refreshed.lastMatchedAt) > Date.parse(oldIso));
+  } finally {
+    sidecarState.deleteSidecarRecord(recordId);
+  }
+});
+
 test("approval terminal resolution falls back to project-dir hwnd when no exact session mapping exists", () => {
   const recordId = `test-sidecar-project-${process.pid}-${Date.now()}`;
   const projectDir = path.join(ROOT, `.tmp-sidecar-project-${Date.now()}`);
@@ -595,6 +671,97 @@ test("read-only require_escalated commands use a longer pending grace window", (
   });
 
   assert(readOnlyGraceMs > writeGraceMs);
+});
+
+test("pending approval batching collapses sibling require_escalated calls from the same turn", () => {
+  const pendingApprovalNotifications = new Map();
+  const pendingApprovalCallIds = new Map();
+
+  pendingApprovalNotifications.set("approval-a", {
+    dedupeKey: "approval-a",
+    eventType: "require_escalated_tool_call",
+    sessionId: "session-batch",
+    turnId: "turn-batch",
+    callId: "call-a",
+    pendingSinceMs: 1_000,
+    deadlineMs: 2_000,
+  });
+  pendingApprovalNotifications.set("approval-b", {
+    dedupeKey: "approval-b",
+    eventType: "require_escalated_tool_call",
+    sessionId: "session-batch",
+    turnId: "turn-batch",
+    callId: "call-b",
+    pendingSinceMs: 1_120,
+    deadlineMs: 6_120,
+  });
+  pendingApprovalNotifications.set("approval-other", {
+    dedupeKey: "approval-other",
+    eventType: "require_escalated_tool_call",
+    sessionId: "session-batch",
+    turnId: "turn-other",
+    callId: "call-other",
+    pendingSinceMs: 1_080,
+    deadlineMs: 2_080,
+  });
+  pendingApprovalCallIds.set("call-a", "approval-a");
+  pendingApprovalCallIds.set("call-b", "approval-b");
+  pendingApprovalCallIds.set("call-other", "approval-other");
+
+  const batch = cli.drainPendingApprovalBatch({
+    pendingApprovalNotifications,
+    pendingApprovalCallIds,
+    representativeKey: "approval-a",
+  });
+
+  assert(batch.batchKey === "session-batch|turn-batch|require_escalated_tool_call");
+  assert(batch.count === 2);
+  assert(batch.representative && batch.representative.dedupeKey === "approval-a");
+  assert(!pendingApprovalNotifications.has("approval-a"));
+  assert(!pendingApprovalNotifications.has("approval-b"));
+  assert(pendingApprovalNotifications.has("approval-other"));
+  assert(!pendingApprovalCallIds.has("call-a"));
+  assert(!pendingApprovalCallIds.has("call-b"));
+  assert(pendingApprovalCallIds.get("call-other") === "approval-other");
+});
+
+test("pending approval batching keeps later same-turn require_escalated calls separate", () => {
+  const pendingApprovalNotifications = new Map();
+  const pendingApprovalCallIds = new Map();
+
+  pendingApprovalNotifications.set("approval-a", {
+    dedupeKey: "approval-a",
+    eventType: "require_escalated_tool_call",
+    sessionId: "session-batch",
+    turnId: "turn-batch",
+    callId: "call-a",
+    pendingSinceMs: 1_000,
+    deadlineMs: 2_000,
+  });
+  pendingApprovalNotifications.set("approval-late", {
+    dedupeKey: "approval-late",
+    eventType: "require_escalated_tool_call",
+    sessionId: "session-batch",
+    turnId: "turn-batch",
+    callId: "call-late",
+    pendingSinceMs: 1_800,
+    deadlineMs: 2_800,
+  });
+  pendingApprovalCallIds.set("call-a", "approval-a");
+  pendingApprovalCallIds.set("call-late", "approval-late");
+
+  const batch = cli.drainPendingApprovalBatch({
+    pendingApprovalNotifications,
+    pendingApprovalCallIds,
+    representativeKey: "approval-a",
+  });
+
+  assert(batch.batchKey === "session-batch|turn-batch|require_escalated_tool_call");
+  assert(batch.count === 1);
+  assert(!pendingApprovalNotifications.has("approval-a"));
+  assert(pendingApprovalNotifications.has("approval-late"));
+  assert(!pendingApprovalCallIds.has("call-a"));
+  assert(pendingApprovalCallIds.get("call-late") === "approval-late");
 });
 
 test("confirmation suppressions cancel pending read-only approvals before they emit", () => {
@@ -969,7 +1136,8 @@ test("README documents codex watcher usage", () => {
   const readmeContent = read("README.md");
   assert(readmeContent.includes("codex-watch"));
   assert(readmeContent.includes("waitingOnApproval"));
-  assert(readmeContent.includes("thread/status/changed"));
+  assert(readmeContent.includes("Scoped / Advanced"));
+  assert(readmeContent.includes("protocol debugging"));
 });
 
 test("README documents codex session watcher usage", () => {
@@ -978,23 +1146,18 @@ test("README documents codex session watcher usage", () => {
   assert(readmeContent.includes("auto-start it in the background"));
   assert(readmeContent.includes("autostart enable"));
   assert(readmeContent.includes("autostart status"));
-  assert(readmeContent.includes("response_item"));
-  assert(readmeContent.includes("response_item.function_call"));
   assert(readmeContent.includes("codex-tui.log"));
-  assert(readmeContent.includes("sandbox_permissions"));
-  assert(readmeContent.includes("apply_patch_approval_request"));
-  assert(readmeContent.includes("does not infer approval from `ToolCall: apply_patch`"));
-  assert(readmeContent.includes("default.rules"));
-  assert(readmeContent.includes("1-second grace window"));
-  assert(readmeContent.includes("matching `function_call_output` arrives"));
-  assert(readmeContent.includes("TUI fallback signal"));
+  assert(readmeContent.includes("approval reminders"));
+  assert(readmeContent.includes("false positives"));
+  assert(readmeContent.includes("DEVELOPMENT.md"));
 });
 
 test("README documents direct Codex notify support and limitation", () => {
   const readmeContent = read("README.md");
   assert(readmeContent.includes("agent-turn-complete"));
-  assert(readmeContent.includes("notify = [\"claude-code-notify\"]"));
-  assert(readmeContent.includes("cannot signal approval requests"));
+  assert(readmeContent.includes('notify = ["npx.cmd", "@erica_s/claude-code-notify"]'));
+  assert(readmeContent.includes('notify = ["claude-code-notify"]'));
+  assert(readmeContent.includes("It cannot signal approval"));
   assert(readmeContent.includes("codex-notify-wrapper.vbs"));
   assert(readmeContent.includes("CLAUDE_CODE_NOTIFY_PAYLOAD"));
 });
@@ -1006,19 +1169,16 @@ test("README documents the codex mcp sidecar companion", () => {
   assert(readmeContent.includes("hidden-launch `codex-session-watch`"));
   assert(readmeContent.includes("[mcp_servers.claude_code_notify_sidecar]"));
   assert(readmeContent.includes("Do **not** set `cwd`"));
-  assert(readmeContent.includes("exact `sessionId` matches"));
+  assert(readmeContent.includes("Toast-only behavior"));
 });
 
-test("docs explain reminder versus localization channel responsibilities", () => {
+test("README stays user-focused while DEVELOPMENT keeps the internal design details", () => {
   const readmeContent = read("README.md");
   const developmentContent = read("DEVELOPMENT.md");
-  assert(readmeContent.includes("Reminder + Localization Responsibilities"));
-  assert(readmeContent.includes("completion notifications + completion-time localization"));
-  assert(readmeContent.includes("approval-localization bridge from session start"));
-  assert(readmeContent.includes("completion does not need `codex-mcp-sidecar`"));
-  assert(readmeContent.includes("approval reminders rely on `codex-session-watch` and `codex-mcp-sidecar`"));
-  assert(readmeContent.includes("protocol-grade approval semantics"));
-  assert(readmeContent.includes("does not treat `tui.notifications` /"));
+  assert(!readmeContent.includes("Reminder + Localization Responsibilities"));
+  assert(readmeContent.includes("For implementation details and design trade-offs"));
+  assert(readmeContent.includes("DEVELOPMENT.md"));
+  assert(developmentContent.includes("README 只保留安装、配置、常用命令"));
   assert(developmentContent.includes("提醒 + 定位的职责拆分"));
   assert(developmentContent.includes("通道能力矩阵"));
   assert(developmentContent.includes("当前项目里的真实数据流"));

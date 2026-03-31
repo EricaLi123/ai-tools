@@ -1,5 +1,7 @@
 # 开发说明
 
+README 只保留安装、配置、常用命令和面向使用者的限制说明；内部实现、信号来源、误报抑制、定位链路和设计取舍统一记录在这里。
+
 ## 架构
 
 ```
@@ -50,7 +52,11 @@ Claude Code 的 hook 习惯是把 JSON 通过 stdin 传进来；Codex 旧版 `no
 
 **配置约束：尽量不要把 Codex `notify` 长期改成 `node.exe + 本地 bin/cli.js` 直连：**
 
-- 常规方案应优先使用发布包入口 `claude-code-notify`，或用户机器上实际安装出来的 shim / wrapper 路径。
+- 当前文档里的 Codex `notify` 主示例应优先写成
+  `notify = ["npx.cmd", "@erica_s/claude-code-notify"]`
+- 如果用户机器上已经把包暴露成 `claude-code-notify` 命令，直接写
+  `notify = ["claude-code-notify"]` 仍然可以
+- 常规方案应优先使用发布包形态，或用户机器上实际安装出来的 shim / wrapper 路径。
 - 原因不是“直连一定不能工作”，而是它会偏离真实用户安装形态，容易把本地排查路径和 npm 包实际行为混在一起。
 - 如果为了隔离某一层 wrapper 问题，临时做一次直连诊断可以接受；但这类配置不应成为默认文档、长期配置，或后续方案设计的前提。
 
