@@ -1,10 +1,10 @@
-# Notification Script — Native WinRT Toast (zero module dependencies)
+﻿# Notification Script 鈥?Native WinRT Toast (zero module dependencies)
 # Toast fires FIRST (fast), then window detection + flash (slower)
 #
 # All hook data (event, session_id, log file path, hwnd) is passed via environment
 # variables by cli.js, which reads stdin once before spawning this script.
 
-# log 路径由 cli.js 计算并传入
+# log 璺緞鐢?cli.js 璁＄畻骞朵紶鍏?
 $LogFile = $env:TOAST_NOTIFY_LOG_FILE
 function Write-Log($msg) {
     $line = "[$((Get-Date).ToString('o'))] [ps1 pid=$PID] $msg"
@@ -14,11 +14,11 @@ function Write-Log($msg) {
 
 Write-Log "started"
 
-# isDev 由 cli.js 通过环境变量传入
+# isDev 鐢?cli.js 閫氳繃鐜鍙橀噺浼犲叆
 $isDev = $env:TOAST_NOTIFY_IS_DEV -ne "0"
 $source = if ($env:TOAST_NOTIFY_SOURCE) { $env:TOAST_NOTIFY_SOURCE } else { '' }
 
-# 1. 从 cli.js 传入的环境变量确定通知标题和内容
+# 1. 浠?cli.js 浼犲叆鐨勭幆澧冨彉閲忕‘瀹氶€氱煡鏍囬鍜屽唴瀹?
 $eventName = if ($env:TOAST_NOTIFY_EVENT) { $env:TOAST_NOTIFY_EVENT } else { '' }
 $baseTitle = if ($env:TOAST_NOTIFY_TITLE) { $env:TOAST_NOTIFY_TITLE } else { '' }
 $message = if ($env:TOAST_NOTIFY_MESSAGE) { $env:TOAST_NOTIFY_MESSAGE } else { '' }
@@ -59,14 +59,14 @@ if ($source) {
 $Message = $message
 Write-Log "source=$source event=$eventName title=$Title message=$Message"
 
-# 2. 窗口检测
+# 2. 绐楀彛妫€娴?
 $hwnd            = $null
 $terminalName    = 'Terminal'
 $terminalExePath = $null
 
-# 3a. 优先使用 cli.js 预先找好的 hwnd（通过 find-hwnd.ps1 在 Node 侧查父链得到）。
-# 这样可以绕过 MSYS2 断链问题：git bash 里 PowerShell 自身的父链走不到编辑器窗口，
-# 但 Node → cmd → Claude Code Node → Code.exe 这条链在 Node 侧是完整的。
+# 3a. 浼樺厛浣跨敤 cli.js 棰勫厛鎵惧ソ鐨?hwnd锛堥€氳繃 find-hwnd.ps1 鍦?Node 渚ф煡鐖堕摼寰楀埌锛夈€?
+# 杩欐牱鍙互缁曡繃 MSYS2 鏂摼闂锛歡it bash 閲?PowerShell 鑷韩鐨勭埗閾捐蛋涓嶅埌缂栬緫鍣ㄧ獥鍙ｏ紝
+# 浣?Node 渚х湅鍒扮殑鐖惰繘绋嬮摼浠嶇劧鏇村畬鏁达紝鑳芥洿绋冲畾鍛戒腑鐪熷疄缁堢绐楀彛銆?
 if ($env:TOAST_NOTIFY_HWND) {
     $hwnd = [IntPtr][long]$env:TOAST_NOTIFY_HWND
     try {
@@ -79,8 +79,8 @@ if ($env:TOAST_NOTIFY_HWND) {
 
 Write-Log "hwnd=$hwnd terminal=$terminalName"
 
-# 合成通知图标：底层 exe 图标 + 上层静态符号 PNG
-# 缓存到 scripts/icons-cache/{hookName}-{exeSlug}.png，npm install 重建包目录时随之清空
+# 鍚堟垚閫氱煡鍥炬爣锛氬簳灞?exe 鍥炬爣 + 涓婂眰闈欐€佺鍙?PNG
+# 缂撳瓨鍒?scripts/icons-cache/{hookName}-{exeSlug}.png锛宯pm install 閲嶅缓鍖呯洰褰曟椂闅忎箣娓呯┖
 function Get-NotifyIcon($hookName, $exePath) {
     $staticIcon = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PSScriptRoot, "..", "assets", "icons", "$hookName.png"))
     if (-not ($exePath -and (Test-Path $exePath))) { return $staticIcon }
@@ -98,7 +98,7 @@ function Get-NotifyIcon($hookName, $exePath) {
         $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
         $g.Clear([System.Drawing.Color]::Transparent)
 
-        # 底层：exe 图标铺满画布
+        # 搴曞眰锛歟xe 鍥炬爣閾烘弧鐢诲竷
         $appIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($exePath)
         if ($appIcon) {
             $appBmp = $appIcon.ToBitmap()
@@ -107,7 +107,7 @@ function Get-NotifyIcon($hookName, $exePath) {
             $appBmp.Dispose()
         }
 
-        # 上层：叠加静态符号 PNG
+        # 涓婂眰锛氬彔鍔犻潤鎬佺鍙?PNG
         $overlay = [System.Drawing.Bitmap]::new($staticIcon)
         $g.DrawImage($overlay, [System.Drawing.Rectangle]::new(0, 0, 48, 48))
         $overlay.Dispose()
@@ -130,8 +130,8 @@ $hookName = switch ($eventName) {
 }
 $iconPath = Get-NotifyIcon $hookName $terminalExePath
 
-# 3. 构建 toast 通知内容
-# dev 版本在标题前添加 [DEV] 标记
+# 3. 鏋勫缓 toast 閫氱煡鍐呭
+# dev 鐗堟湰鍦ㄦ爣棰樺墠娣诲姞 [DEV] 鏍囪
 $devMarker = if ($isDev) { "[DEV] " } else { "" }
 $notificationTitle = "$devMarker$Title ($terminalName)"
 $escapedTitle = [System.Security.SecurityElement]::Escape($notificationTitle)
@@ -143,7 +143,7 @@ if ($hwnd) {
     $actionsXml = "<actions><action activationType=`"protocol`" arguments=`"$activateUrl`" content=`"Open`"/></actions>"
 }
 
-# 图标 XML（路径无效时为空字符串，保证降级安全）
+# 鍥炬爣 XML锛堣矾寰勬棤鏁堟椂涓虹┖瀛楃涓诧紝淇濊瘉闄嶇骇瀹夊叏锛?
 $iconXml = ''
 if ($iconPath -and (Test-Path $iconPath)) {
     $uriPath = $iconPath.Replace('\', '/')
@@ -151,7 +151,7 @@ if ($iconPath -and (Test-Path $iconPath)) {
     $iconXml = "<image placement=`"appLogoOverride`" src=`"$escapedIconSrc`"/>"
 }
 
-# 4. 发送 toast 通知
+# 4. 鍙戦€?toast 閫氱煡
 try {
     [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
     [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null
@@ -177,7 +177,7 @@ try {
     Write-Log "toast sent: $notificationTitle"
 } catch { Write-Log "toast failed: $_" }
 
-# 5. 任务栏闪烁
+# 5. 浠诲姟鏍忛棯鐑?
 if ($hwnd) {
     try {
         Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class FlashW { [DllImport("user32.dll")] public static extern bool FlashWindowEx(ref FLASHWINFO p); [StructLayout(LayoutKind.Sequential)] public struct FLASHWINFO { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; } }' -ErrorAction SilentlyContinue
@@ -191,3 +191,4 @@ if ($hwnd) {
         Write-Log "flash sent"
     } catch { Write-Log "flash failed: $_" }
 }
+

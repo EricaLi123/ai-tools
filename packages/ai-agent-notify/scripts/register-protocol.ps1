@@ -11,7 +11,7 @@ $command = "wscript.exe `"$vbsPath`" `"%1`""
 # Write registry entries
 $regPath = "HKCU:\Software\Classes\erica-s.ai-agent-notify.activate-window"
 New-Item -Path "$regPath\shell\open\command" -Force | Out-Null
-Set-ItemProperty -Path $regPath -Name "(default)" -Value "URL:Claude Code Activate Window Protocol" -Force
+Set-ItemProperty -Path $regPath -Name "(default)" -Value "URL:AI Agent Notify Activate Window Protocol" -Force
 New-ItemProperty -Path $regPath -Name "URL Protocol" -Value "" -Force -ErrorAction SilentlyContinue | Out-Null
 Set-ItemProperty -Path "$regPath\shell\open\command" -Name "(default)" -Value $command -Force
 

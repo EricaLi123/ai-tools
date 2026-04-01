@@ -18,6 +18,7 @@ const {
 
 const PACKAGE_VERSION = readPackageVersion();
 const LOG_DIR = path.join(os.tmpdir(), "ai-agent-notify");
+const LOG_FILE_PREFIX = "ai-agent-notify";
 const IS_DEV = !fs.existsSync(path.join(__dirname, "..", ".published"));
 const SIDECAR_SESSION_RESOLUTION_POLL_MS = 1000;
 const SIDECAR_SESSION_RESOLUTION_TIMEOUT_MS = 90 * 1000;
@@ -734,7 +735,8 @@ function writeMcpError(id, code, message) {
 
 function createRuntime(logId) {
   fs.mkdirSync(LOG_DIR, { recursive: true });
-  const logFile = path.join(LOG_DIR, `${logId}.log`);
+  const normalizedLogId = String(logId || "unknown").replace(/[^A-Za-z0-9._-]+/g, "-");
+  const logFile = path.join(LOG_DIR, `${LOG_FILE_PREFIX}-${normalizedLogId}.log`);
 
   function log(message) {
     const line = `[${new Date().toISOString()}] [node pid=${process.pid}] ${message}\n`;

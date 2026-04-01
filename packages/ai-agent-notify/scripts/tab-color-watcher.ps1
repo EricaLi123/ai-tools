@@ -253,7 +253,7 @@ function Get-ConsoleInputEventCount([IntPtr]$hIn) {
 }
 
 # --- Named Mutex 防重复 ---
-$mutexName = "Global\claude-notify-tab-$TargetPid"
+$mutexName = "Global\ai-agent-notify-tab-$TargetPid"
 $hMutex = [TabWatcher]::CreateMutexW([IntPtr]::Zero, $true, $mutexName)
 if ($hMutex -eq [IntPtr]::Zero) {
     Write-Log "CreateMutex failed, exiting"

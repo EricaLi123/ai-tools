@@ -12,7 +12,7 @@
 $scriptRoot    = Split-Path -Parent $PSScriptRoot
 $notifyScript  = Join-Path $scriptRoot "scripts\notify.ps1"
 $findHwndScript = Join-Path $scriptRoot "scripts\find-hwnd.ps1"
-$logFile       = Join-Path $env:TEMP "claude-notify-test.log"
+$logFile       = Join-Path $env:TEMP "ai-agent-notify-test.log"
 
 # 使用当前终端窗口（从当前 PID 向上找父链中第一个有窗口的进程）
 $findResult = & powershell.exe -NoProfile -EP Bypass -File $findHwndScript -StartPid $PID 2>$null

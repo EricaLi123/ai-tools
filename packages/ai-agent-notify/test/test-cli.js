@@ -169,6 +169,11 @@ test("cli.js includes codex mcp sidecar mode", () => {
   assert(cliContent.includes('case "prompts/list"'));
 });
 
+test("cli.js prefixes runtime log files with the package name", () => {
+  assert(cliContent.includes('const LOG_FILE_PREFIX = "ai-agent-notify"'));
+  assert(cliContent.includes('`${LOG_FILE_PREFIX}-${normalizedLogId}.log`'));
+});
+
 test("sidecar candidate picker prefers the closest unambiguous rollout", () => {
   const candidate = cli.pickSidecarSessionCandidate([
     {
