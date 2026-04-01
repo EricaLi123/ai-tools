@@ -56,6 +56,7 @@ startup_timeout_sec = 30
 
 ## Known Limitations
 
+- **Very long Codex sessions:** completion notifications on Windows can stop firing after a very long session; `clear` or start a new session if this happens
 - **Toast source** shows as "Windows PowerShell" instead of "Claude Code"
 - **Windows 10:** `Open` may not work due to OS limitations
 - **macOS / Linux:** not supported

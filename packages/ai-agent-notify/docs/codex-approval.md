@@ -124,6 +124,52 @@ approval 主判断仍然是 rollout 优先，因为它同时满足三件事：
 
 ## Codex MCP Sidecar
 
+### Windows 配置路线
+
+当前保留两条 Windows 配置路线。这里只定义“当前怎么配”；配置路线为什么演进成现在这样，见 [`history/codex-notify-findings.md`](./history/codex-notify-findings.md)。
+
+#### 1. 全局安装后直配命令
+
+先安装包：
+
+```bash
+volta install @erica-s/ai-agent-notify
+# or
+npm install -g @erica-s/ai-agent-notify
+```
+
+然后在 Codex 配置里直接使用命令名：
+
+```toml
+notify = ["ai-agent-notify.cmd"]
+
+[mcp_servers.ai_agent_notify_sidecar]
+command = "ai-agent-notify.cmd"
+args = ["codex-mcp-sidecar"]
+required = false
+startup_timeout_sec = 30
+```
+
+- 这条线适合想去掉 `npx` 启动链、把入口固定为本机已安装命令的场景。
+- Windows 上这里显式写 `.cmd`，不要写成 `ai-agent-notify`；原因见 [`windows-runtime.md`](./windows-runtime.md)。
+
+#### 2. 直接配置成 `npx`
+
+不做全局安装，配置里直接写 `npx.cmd`：
+
+```toml
+notify = ["npx.cmd", "@erica-s/ai-agent-notify"]
+
+[mcp_servers.ai_agent_notify_sidecar]
+command = "npx.cmd"
+args = ["@erica-s/ai-agent-notify", "codex-mcp-sidecar"]
+required = false
+startup_timeout_sec = 30
+```
+
+- 这条线是 README 当前继续公开推荐的路径，因为它更容易自动跟上已发布版本。
+- `npx` 在 Windows 上也显式写 `npx.cmd`，不要依赖 `npx` / `npx.ps1` 的命中差异。
+
 ```text
 ~/.codex/config.toml
   → [mcp_servers.ai_agent_notify_sidecar]
