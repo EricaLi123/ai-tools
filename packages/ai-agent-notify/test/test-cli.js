@@ -1167,19 +1167,20 @@ test("README documents codex session watcher usage", () => {
   const readmeContent = read("README.md");
   assert(readmeContent.includes("codex-session-watch"));
   assert(readmeContent.includes("auto-start `codex-session-watch`"));
-  assert(readmeContent.includes("--tui-log <path>"));
   assert(readmeContent.includes("approval reminders"));
+  assert(readmeContent.includes("If you only care about completion notifications"));
+  assert(!readmeContent.includes("If you are not using the MCP sidecar"));
   assert(!readmeContent.includes("codex-watch"));
 });
 
 test("README documents direct Codex notify support and limitation", () => {
   const readmeContent = read("README.md");
-  assert(readmeContent.includes("agent-turn-complete"));
   assert(readmeContent.includes('notify = ["npx.cmd", "@erica-s/ai-agent-notify"]'));
   assert(readmeContent.includes("Recommended `~/.codex/config.toml`:"));
+  assert(readmeContent.includes("covers completion notifications"));
   assert(readmeContent.includes("startup_timeout_sec = 30"));
-  assert(readmeContent.includes("April 1, 2026"));
-  assert(readmeContent.includes("auto-updates"));
+  assert(readmeContent.includes("latest published package automatically"));
+  assert(!readmeContent.includes("April 1, 2026"));
   assert(!readmeContent.includes("AI_AGENT_NOTIFY_PAYLOAD"));
 });
 
@@ -1195,14 +1196,16 @@ test("README documents the codex mcp sidecar companion", () => {
   assert(readmeContent.includes("Do **not** set `cwd`"));
 });
 
-test("README states the core reminder and return-to-session problem", () => {
+test("README stays focused on quick setup", () => {
   const readmeContent = read("README.md");
-  assert(readmeContent.includes("## Problem It Solves"));
-  assert(readmeContent.includes("solves two core problems"));
-  assert(readmeContent.includes("### 1. Reminder"));
-  assert(readmeContent.includes("Taskbar flashing"));
-  assert(readmeContent.includes("### 2. Return To The Session"));
-  assert(readmeContent.includes("activates the target window"));
+  assert(!readmeContent.includes("## Problem It Solves"));
+  assert(!readmeContent.includes("## Install"));
+  assert(!readmeContent.includes("volta install"));
+  assert(!readmeContent.includes("npm install -g"));
+  assert(readmeContent.includes("## Claude Code"));
+  assert(readmeContent.includes("## Codex"));
+  assert(readmeContent.includes("Stop"));
+  assert(readmeContent.includes("PermissionRequest"));
 });
 
 test("README stays user-focused while internal docs remain split by topic", () => {
