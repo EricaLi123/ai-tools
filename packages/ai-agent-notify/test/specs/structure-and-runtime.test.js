@@ -6,12 +6,16 @@ module.exports = function runStructureAndRuntimeTests(h) {
   [
     "bin/cli.js",
     "lib/codex-approval.js",
+    "lib/codex-approval-notify.js",
+    "lib/codex-approval-rules.js",
+    "lib/codex-approval-state.js",
     "lib/codex-sidecar-resolver.js",
     "lib/codex-sidecar-state.js",
     "lib/codex-session-events.js",
     "lib/codex-session-watch.js",
     "lib/notification-sources.js",
     "lib/notify-runtime.js",
+    "lib/shell-command-analysis.js",
     "lib/shared-utils.js",
     "lib/windows-paths.js",
     "scripts/find-hwnd.ps1",
@@ -54,11 +58,15 @@ module.exports = function runStructureAndRuntimeTests(h) {
 
   const cliContent = read("bin/cli.js");
   const approvalContent = read("lib/codex-approval.js");
+  const approvalNotifyContent = read("lib/codex-approval-notify.js");
+  const approvalRulesContent = read("lib/codex-approval-rules.js");
+  const approvalStateContent = read("lib/codex-approval-state.js");
   const notifyRuntimeContent = read("lib/notify-runtime.js");
   const sidecarResolverContent = read("lib/codex-sidecar-resolver.js");
   const sidecarStateContent = read("lib/codex-sidecar-state.js");
   const sessionEventContent = read("lib/codex-session-events.js");
   const sessionWatchContent = read("lib/codex-session-watch.js");
+  const shellCommandAnalysisContent = read("lib/shell-command-analysis.js");
   const sharedUtilsContent = read("lib/shared-utils.js");
   const notifyContent = read("scripts/notify.ps1");
   const startHiddenContent = read("scripts/start-hidden.vbs");
@@ -141,10 +149,18 @@ module.exports = function runStructureAndRuntimeTests(h) {
   });
 
   test("approval logic lives outside cli.js", () => {
-    assert(approvalContent.includes("function getCodexRequireEscalatedSuppressionReason("));
-    assert(approvalContent.includes("function extractCommandApprovalRoots("));
-    assert(approvalContent.includes("function confirmSessionApprovalForRecentEvents("));
-    assert(approvalContent.includes("function emitCodexApprovalNotification("));
+    assert(approvalContent.includes('require("./codex-approval-notify")'));
+    assert(approvalContent.includes('require("./codex-approval-rules")'));
+    assert(approvalContent.includes('require("./codex-approval-state")'));
+    assert(approvalContent.includes('require("./shell-command-analysis")'));
+    assert(!approvalContent.includes("function getCodexRequireEscalatedSuppressionReason("));
+    assert(!approvalContent.includes("function extractCommandApprovalRoots("));
+    assert(!approvalContent.includes("function confirmSessionApprovalForRecentEvents("));
+    assert(!approvalContent.includes("function emitCodexApprovalNotification("));
+    assert(approvalRulesContent.includes("function getCodexRequireEscalatedSuppressionReason("));
+    assert(approvalStateContent.includes("function confirmSessionApprovalForRecentEvents("));
+    assert(approvalNotifyContent.includes("function emitCodexApprovalNotification("));
+    assert(shellCommandAnalysisContent.includes("function extractCommandApprovalRoots("));
   });
 
   test("windows path normalizer keeps blank values blank", () => {
