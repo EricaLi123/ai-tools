@@ -16,13 +16,21 @@ const {
   pruneEmittedEventKeys,
   syncCodexTuiLogState,
 } = require("./codex-session-watch-streams");
-const { LOG_DIR, createNeutralTerminalContext, createRuntime } = require("./notify-runtime");
+const {
+  BUILD_INFO,
+  LOG_DIR,
+  createNeutralTerminalContext,
+  createRuntime,
+} = require("./notify-runtime");
 const {
   fileExistsCaseInsensitive,
   getArgValue,
   getEnvFirst,
   parsePositiveInteger,
 } = require("./shared-utils");
+
+const WATCHER_REPLACE_TIMEOUT_MS = 5000;
+const WATCHER_REPLACE_POLL_MS = 100;
 
 async function runCodexSessionWatchMode(argv) {
   if (argv[0] === "--help" || argv[0] === "help") {
@@ -201,12 +209,51 @@ async function runCodexSessionWatchMode(argv) {
 }
 
 function ensureCodexSessionWatchRunning({ cliPath, log, watcherArgs = [] }) {
-  const state = querySingleInstanceLock("codex-session-watch");
+  let state = querySingleInstanceLock("codex-session-watch");
+  let replacedWatcher = false;
   if (state.running) {
-    if (typeof log === "function") {
-      log(`codex-session-watch already running pid=${state.pid} lock=${state.lockPath}`);
+    if (!isWatcherBuildCurrent(state)) {
+      if (typeof log === "function") {
+        log(
+          `codex-session-watch build mismatch pid=${state.pid || "unknown"} lock=${state.lockPath} runningBuild=${formatWatcherBuildInfo(state.buildInfo)} currentBuild=${formatWatcherBuildInfo(BUILD_INFO)} action=replace`
+        );
+      }
+
+      const replaced = stopOutdatedWatcher({
+        pid: state.pid,
+        lockPath: state.lockPath,
+        log,
+      });
+      replacedWatcher = replaced;
+      state = querySingleInstanceLock("codex-session-watch");
+      if (!replaced && state.running) {
+        if (typeof log === "function") {
+          log(
+            `codex-session-watch replace skipped pid=${state.pid || "unknown"} lock=${state.lockPath} reason=watcher_still_running`
+          );
+        }
+        return {
+          launched: false,
+          pid: state.pid,
+          lockPath: state.lockPath,
+          replaced: replacedWatcher,
+          buildInfo: state.buildInfo,
+        };
+      }
+    } else {
+      if (typeof log === "function") {
+        log(
+          `codex-session-watch already running pid=${state.pid} lock=${state.lockPath} build=${formatWatcherBuildInfo(state.buildInfo)}`
+        );
+      }
+      return {
+        launched: false,
+        pid: state.pid,
+        lockPath: state.lockPath,
+        replaced: replacedWatcher,
+        buildInfo: state.buildInfo,
+      };
     }
-    return { launched: false, pid: state.pid, lockPath: state.lockPath };
   }
 
   if (state.pid && typeof log === "function") {
@@ -218,7 +265,57 @@ function ensureCodexSessionWatchRunning({ cliPath, log, watcherArgs = [] }) {
     launched: true,
     pid: child && child.pid ? child.pid : null,
     lockPath: state.lockPath,
+    replaced: replacedWatcher,
+    buildInfo: normalizeWatcherBuildInfo(BUILD_INFO),
   };
+}
+
+function stopOutdatedWatcher({
+  pid,
+  lockPath,
+  log,
+  timeoutMs = WATCHER_REPLACE_TIMEOUT_MS,
+  pollMs = WATCHER_REPLACE_POLL_MS,
+}) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return true;
+  }
+
+  try {
+    process.kill(pid);
+  } catch (error) {
+    if (typeof log === "function") {
+      log(
+        `codex-session-watch replace failed pid=${pid} lock=${lockPath} error=${error.message}`
+      );
+    }
+    return false;
+  }
+
+  if (typeof log === "function") {
+    log(
+      `requested outdated codex-session-watch shutdown pid=${pid} lock=${lockPath} timeoutMs=${timeoutMs}`
+    );
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isProcessRunning(pid)) {
+      return true;
+    }
+    sleepSync(pollMs);
+  }
+
+  if (!isProcessRunning(pid)) {
+    return true;
+  }
+
+  if (typeof log === "function") {
+    log(
+      `timed out waiting for outdated codex-session-watch pid=${pid} lock=${lockPath} timeoutMs=${timeoutMs}`
+    );
+  }
+  return false;
 }
 
 function launchCodexSessionWatchHidden({ cliPath, watcherArgs, log }) {
@@ -288,10 +385,7 @@ function acquireSingleInstanceLock(lockName, log) {
       const handle = fs.openSync(lockPath, "wx");
       fs.writeFileSync(
         handle,
-        JSON.stringify({
-          pid: process.pid,
-          startedAt: new Date().toISOString(),
-        }),
+        JSON.stringify(createWatcherLockPayload()),
         "utf8"
       );
       fs.closeSync(handle);
@@ -322,12 +416,14 @@ function acquireSingleInstanceLock(lockName, log) {
 
 function querySingleInstanceLock(lockName) {
   const lockPath = getSingleInstanceLockPath(lockName);
-  const pid = readLockPid(lockPath);
+  const state = readLockState(lockPath);
 
   return {
     lockPath,
-    pid,
-    running: isProcessRunning(pid),
+    pid: state.pid,
+    startedAt: state.startedAt,
+    buildInfo: state.buildInfo,
+    running: isProcessRunning(state.pid),
   };
 }
 
@@ -359,13 +455,76 @@ function releaseSingleInstanceLock(lockInfo, log) {
 }
 
 function readLockPid(lockPath) {
+  return readLockState(lockPath).pid;
+}
+
+function readLockState(lockPath) {
   try {
     const payload = JSON.parse(fs.readFileSync(lockPath, "utf8"));
     const pid = parseInt(payload && payload.pid, 10);
-    return Number.isInteger(pid) && pid > 0 ? pid : null;
+    return {
+      pid: Number.isInteger(pid) && pid > 0 ? pid : null,
+      startedAt: typeof payload?.startedAt === "string" ? payload.startedAt : "",
+      buildInfo: normalizeWatcherBuildInfo(payload && payload.buildInfo),
+    };
   } catch {
-    return null;
+    return {
+      pid: null,
+      startedAt: "",
+      buildInfo: normalizeWatcherBuildInfo(null),
+    };
   }
+}
+
+function createWatcherLockPayload({
+  pid = process.pid,
+  startedAt = new Date().toISOString(),
+  buildInfo = BUILD_INFO,
+} = {}) {
+  return {
+    pid,
+    startedAt,
+    buildInfo: normalizeWatcherBuildInfo(buildInfo),
+  };
+}
+
+function normalizeWatcherBuildInfo(buildInfo) {
+  const source = buildInfo && typeof buildInfo === "object" ? buildInfo : {};
+  return {
+    version: typeof source.version === "string" ? source.version : "0.0.0",
+    gitCommit: typeof source.gitCommit === "string" ? source.gitCommit : "unknown",
+    sourceFingerprint:
+      typeof source.sourceFingerprint === "string" ? source.sourceFingerprint : "unknown",
+    installKind: typeof source.installKind === "string" ? source.installKind : "unknown",
+    packageRoot: typeof source.packageRoot === "string" ? source.packageRoot : "",
+  };
+}
+
+function isWatcherBuildCurrent(lockState, currentBuildInfo = BUILD_INFO) {
+  const runningBuild = normalizeWatcherBuildInfo(lockState && lockState.buildInfo);
+  const currentBuild = normalizeWatcherBuildInfo(currentBuildInfo);
+
+  return (
+    runningBuild.sourceFingerprint === currentBuild.sourceFingerprint &&
+    runningBuild.installKind === currentBuild.installKind &&
+    runningBuild.packageRoot === currentBuild.packageRoot
+  );
+}
+
+function formatWatcherBuildInfo(buildInfo) {
+  const normalized = normalizeWatcherBuildInfo(buildInfo);
+  return `ver=${normalized.version} git=${normalized.gitCommit} src=${normalized.sourceFingerprint} install=${normalized.installKind} root=${normalized.packageRoot || "unknown"}`;
+}
+
+function sleepSync(ms) {
+  const timeout = Math.max(0, parsePositiveInteger(ms, 0));
+  if (!timeout) {
+    return;
+  }
+
+  const shared = new SharedArrayBuffer(4);
+  const signal = new Int32Array(shared);
+  Atomics.wait(signal, 0, 0, timeout);
 }
 
 function isProcessRunning(pid) {
@@ -386,6 +545,10 @@ function getCodexHomeDir() {
 }
 
 module.exports = {
+  createWatcherLockPayload,
   ensureCodexSessionWatchRunning,
+  isWatcherBuildCurrent,
+  querySingleInstanceLock,
   runCodexSessionWatchMode,
+  stopOutdatedWatcher,
 };

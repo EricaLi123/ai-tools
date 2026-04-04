@@ -19,6 +19,7 @@ const mcpServer = require(path.join(ROOT, "lib", "codex-mcp-server.js"));
 const sidecarResolver = require(path.join(ROOT, "lib", "codex-sidecar-resolver.js"));
 const sidecarMatcher = require(path.join(ROOT, "lib", "codex-sidecar-matcher.js"));
 const sidecarStore = require(path.join(ROOT, "lib", "codex-sidecar-store.js"));
+const sessionWatchRunner = require(path.join(ROOT, "lib", "codex-session-watch-runner.js"));
 const notifyRuntime = require(path.join(ROOT, "lib", "notify-runtime.js"));
 const windowsPaths = require(path.join(ROOT, "lib", "windows-paths.js"));
 const { createNotificationSpec } = require(path.join(
@@ -156,6 +157,7 @@ function createHarness() {
     path,
     read,
     section,
+    sessionWatchRunner,
     sidecarResolver,
     sidecarState,
     skip,

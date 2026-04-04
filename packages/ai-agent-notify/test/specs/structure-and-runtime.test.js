@@ -1,5 +1,17 @@
 module.exports = function runStructureAndRuntimeTests(h) {
-  const { assert, fs, normalizeTestPath, notifyRuntime, path, read, ROOT, section, test, windowsPaths } = h;
+  const {
+    assert,
+    fs,
+    normalizeTestPath,
+    notifyRuntime,
+    path,
+    read,
+    ROOT,
+    section,
+    sessionWatchRunner,
+    test,
+    windowsPaths,
+  } = h;
 
   section("File structure");
 
@@ -200,6 +212,50 @@ module.exports = function runStructureAndRuntimeTests(h) {
     } finally {
       try {
         fs.unlinkSync(runtime.logFile);
+      } catch {}
+    }
+  });
+
+  test("session watcher lock payload stores build identity and compares current builds", () => {
+    const lockName = `test-session-watch-${process.pid}-${Date.now()}`;
+    const expectedBuild = {
+      ...notifyRuntime.BUILD_INFO,
+      sourceFingerprint: "abcdef123456",
+      packageRoot: "D:\\repo\\linked-package",
+      installKind: "workspace",
+    };
+    const payload = sessionWatchRunner.createWatcherLockPayload({
+      pid: 43210,
+      startedAt: "2026-04-04T00:00:00.000Z",
+      buildInfo: expectedBuild,
+    });
+    const lockPath = path.join(notifyRuntime.LOG_DIR, `${lockName}.lock`);
+
+    try {
+      fs.mkdirSync(notifyRuntime.LOG_DIR, { recursive: true });
+      fs.writeFileSync(lockPath, JSON.stringify(payload), "utf8");
+
+      const state = sessionWatchRunner.querySingleInstanceLock(lockName);
+      assert(state.pid === 43210);
+      assert(state.startedAt === "2026-04-04T00:00:00.000Z");
+      assert(state.buildInfo.sourceFingerprint === "abcdef123456");
+      assert(state.buildInfo.packageRoot === "D:\\repo\\linked-package");
+      assert(sessionWatchRunner.isWatcherBuildCurrent(state, expectedBuild));
+      assert(
+        !sessionWatchRunner.isWatcherBuildCurrent(state, {
+          ...expectedBuild,
+          sourceFingerprint: "bbbbbb654321",
+        })
+      );
+      assert(
+        !sessionWatchRunner.isWatcherBuildCurrent(state, {
+          ...expectedBuild,
+          packageRoot: "D:\\repo\\other-package",
+        })
+      );
+    } finally {
+      try {
+        fs.unlinkSync(lockPath);
       } catch {}
     }
   });
