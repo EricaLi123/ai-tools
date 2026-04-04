@@ -1,231 +1,77 @@
-# Codex Approval Notification Session
+# 2026-03-18 legacy repo app-server approval 验证
 
-Date: 2026-03-18
+这页记录的是旧仓库、旧包名时代的一次路线验证。文件名保留原样，只是为了方便从后续文档回链。
 
-Note: this page records the investigation when the repo and package still used
-the old `claude-code-tools` / `claude-code-notify` names. The paths and command
-names below are preserved as historical context.
+当时的仓库与包路径是：
 
-Repo:
-- `D:\Git\claude-code-tools`
+- 仓库：`D:\Git\claude-code-tools`
+- 包：`D:\Git\claude-code-tools\packages\claude-code-notify`
 
-Package:
-- `D:\Git\claude-code-tools\packages\claude-code-notify`
+## 为什么还保留
 
-## 为什么保留这页
+这页之所以值得保留，不是因为里面的实现后来成了主路线，而是因为它把一件事验证得很清楚：
 
-这页保留的价值，不是因为里面的实现后来成了主路线，而是因为它把 `app-server` 路线为什么没成为默认方案说明白了：
+- `codex app-server` 能让你看到 approval 相关状态
+- 但“单独拉起一个 watcher 去旁听别的 Codex 会话”并不能满足全局默认路线的需求
 
-- 如果想靠 `app-server` 拿到 approval 事件，用户通常就不能只是“配一次，然后继续直接用官方 `codex`”，而是必须包一层宿主 / 包装器
-- 如果不包这层，只是独立拉起一个 `codex app-server` watcher，它又不能全局观察其他 Codex 会话里的 approval
+也正因为这次验证失败，后面主路线才进一步收敛到 `codex-session-watch`。
 
-也正因为这两点，后续默认主路线才转向 `codex-session-watch`。
+## 当时要回答的问题
 
-## 先看结论
+在不 fork Codex、不 patch Codex 内部、也不额外引入运行时依赖的前提下，能不能只靠官方 `codex app-server` 做一个 approval watcher？
 
-- 当时试的是“基于官方 `app-server` 做 approval watcher”。
-- 代码实现本身是成功的，协议也确实能看到 `waitingOnApproval`。
-- 但这条线不满足“配置一次，此后无感继续直接用官方 `codex`”这个根本需求，因为默认要想稳定拿到事件，就必须把 Codex 包进额外一层。
-- 同时，本次验证也证明：如果不包这层，只是独立启动 watcher，它只能看到自己启动的那条 app-server 连接，看不到别的 Codex 会话。
-- 所以这条路被验证为“不适合作为默认全局 approval 路线”。
+## 当时实际做了什么
 
-## Goal
-
-Implement a local-only way for `@erica_s/claude-code-notify` to notify when Codex is waiting for approval, while continuing to use the official Codex package and explicitly avoiding:
-
-- forking Codex
-- patching Codex internals
-- adding runtime dependencies to this package
-
-## Starting Constraints
-
-- Existing package behavior only handled the original stdin hook path.
-- Existing package had zero runtime dependencies and tests asserted that.
-- User wanted to keep using the official Codex package.
-- User rejected any approach that required forking or patching Codex itself.
-
-## Initial Options Considered
-
-The investigation narrowed to three broad families:
-
-- A. Watch Codex session files directly
-- B. Integrate more deeply with request-level approval events from official `app-server`
-- C. Use official `codex app-server`, but only watch thread status changes and notify when a thread enters `waitingOnApproval`
-
-The chosen direction for implementation was `C`, because it was the least invasive official-interface approach.
-
-## Protocol Research
-
-Local generated schema / TS bindings were inspected:
-
-- `C:\Users\Erica\codex-app-server-schema`
-- `C:\Users\Erica\codex-app-server-ts`
-
-Key findings:
-
-- Official notifications include `thread/status/changed`
-- Thread active flags include `waitingOnApproval`
-- `turn/completed` also exists, but this session focused on approval notifications
-- Lower-level approval request events also exist, but were not chosen for the first pass
-
-Important protocol files referenced:
-
-- `C:\Users\Erica\codex-app-server-ts\ServerNotification.ts`
-- `C:\Users\Erica\codex-app-server-ts\v2\ThreadStatusChangedNotification.ts`
-- `C:\Users\Erica\codex-app-server-ts\v2\ThreadStatus.ts`
-- `C:\Users\Erica\codex-app-server-ts\v2\ThreadActiveFlag.ts`
-
-## Implementation Work Done
-
-The package was extended with a new explicit mode:
+那次实现增加了一个显式模式：
 
 - `claude-code-notify codex-watch`
 
-Behavior added in this session:
+它会：
 
-- starts official `codex app-server`
-- sends `initialize`
-- sends `initialized`
-- bootstraps current threads with `thread/list`
-- watches `thread/status/changed`
-- when `activeFlags` contains `waitingOnApproval`, reuses the existing PowerShell notification path
-- uses title override `Codex Needs Approval`
-- deduplicates repeated notifications per thread while approval is still pending
+- 启动官方 `codex app-server`
+- 发送 `initialize`
+- 发送 `initialized`
+- 通过 `thread/list` 做 bootstrap
+- 监听 `thread/status/changed`
+- 发现 `waitingOnApproval` 时复用现有通知链路
 
-Windows-specific launch compatibility was also added:
+换句话说，当时实现本身并没有失败；失败的是它对应的路线边界。
 
-- resolve `codex` through `where.exe`
-- handle Volta / npm shim cases
-- if the resolved launcher is `.cmd` or `.bat`, use `cmd.exe /c`
+## 验证里真正证明了什么
 
-Files modified during implementation:
+那轮验证确认了两件互相独立的事：
 
-- `packages/claude-code-notify/bin/cli.js`
-- `packages/claude-code-notify/README.md`
-- `packages/claude-code-notify/test/test-cli.js`
+1. 官方 app-server 确实会给出 approval 相关状态，例如 `waitingOnApproval`
+2. 独立启动的 watcher 只能稳定看到它自己那条 app-server 连接里的事件
 
-## Validation Performed
+关键的端到端结论是：
 
-### Static / package validation
+- 第二个独立的官方 `codex app-server` 实例能够看到真实 approval
+- 后台 `codex-watch` 进程看不到那个外部会话的状态变化
 
-Commands run:
+也就是说，它不是“全局旁听器”，只是“自己那条连接的观察者”。
 
-```powershell
-node --check D:\Git\claude-code-tools\packages\claude-code-notify\bin\cli.js
-node D:\Git\claude-code-tools\packages\claude-code-notify\test\test-cli.js
-```
+## 这次验证为什么否决了默认主路线
 
-Observed result:
+项目的根本需求不是“理论上能在某条连接里拿到 approval”，而是：
 
-- `18 passed, 0 failed, 5 skipped`
+- 用户配置一次
+- 之后继续直接使用官方 `codex`
+- 不需要额外包一层宿主、包装器或自定义前端
 
-Skipped items were due to sandbox restrictions around nested child processes.
+`app-server watcher` 做不到这一点：
 
-### Local startup validation
+- 如果不包宿主，它看不到别的会话
+- 如果要稳定拿到事件，通常就得把 Codex 放进额外一层
 
-`codex-watch` was started locally and confirmed to reach:
+所以它不适合成为默认的全局 approval 路线。
 
-- `initialize`
-- `initialized`
-- `thread/list`
+## 这页今天还剩下的价值
 
-Observed watcher log sequence:
+- 说明 `app-server` 路线不是没试过，而是试过后被边界否决了
+- 说明失败点在“方案边界”，不在“代码没写通”或“Windows 命令没配对”
+- 给以后再次想把 `app-server` 拿回来当默认方案的人一个最短反证入口
 
-```text
-app-server <= initialize id=req-1
-app-server <= initialized
-app-server <= thread/list id=req-2
-```
+## 后续影响
 
-This established that the package could launch official Codex and begin its own app-server session successfully.
-
-### End-to-end approval probe
-
-A second independent official `codex app-server` instance was then used to create a real thread and start a turn under:
-
-- `approvalPolicy: "on-request"`
-- read-only sandbox
-
-Prompt used:
-
-```text
-Create a file named approval-probe.txt in the current directory containing the single line hello.
-```
-
-That probe definitively produced:
-
-```json
-{
-  "method": "thread/status/changed",
-  "params": {
-    "status": {
-      "type": "active",
-      "activeFlags": ["waitingOnApproval"]
-    }
-  }
-}
-```
-
-It also produced an explicit approval request:
-
-- `item/commandExecution/requestApproval`
-
-## Final Finding
-
-The critical result of the session:
-
-- the independent probe app-server saw `waitingOnApproval`
-- the background `claude-code-notify codex-watch` process did not see that external thread transition
-
-The watcher only observed the app-server instance it launched itself. It did not receive events from a separate Codex app-server / session.
-
-## Conclusion
-
-The implemented `app-server watcher` proves that:
-
-- official app-server integration works locally for the watcher's own connection
-- official `thread/status/changed` notifications do contain `waitingOnApproval`
-
-But it also proves that this specific non-invasive design does **not** satisfy the real user goal of globally observing approval requests from other Codex sessions.
-
-Therefore, the current result is:
-
-- `scheme C` was implemented successfully as code
-- `scheme C` was invalidated for the actual use case by end-to-end testing
-
-## Current Recommendation
-
-If the requirement remains:
-
-- keep using the official Codex package
-- do not fork Codex
-- do not patch Codex internals
-
-Then the remaining viable direction is:
-
-- watch Codex session files (`sessions/*.jsonl`) instead of relying on a separately launched `app-server` instance
-
-## Session Summary
-
-User intent over this session:
-
-1. Keep using the official Codex package
-2. Avoid fork / patch approaches
-3. Investigate official-code-based non-invasive solutions
-4. Implement the selected path in `packages/claude-code-notify`
-5. Verify whether it actually works end to end
-
-What was learned:
-
-1. Official Codex app-server exposes the right approval-related status
-2. A standalone watcher process can launch and talk to official app-server
-3. That watcher does not act as a global observer for approvals originating in other Codex sessions
-4. The architecture failure is in the approach boundary, not in local installation or Windows command resolution
-
-## Follow-up (2026-03-20)
-
-This conclusion remained relevant after later package iterations.
-
-- The package later added `codex-session-watch` and that became the primary approval path for normal Codex CLI usage.
-- `codex-watch` was retained as a narrower app-server-scoped / debugging mode, not as the default global approval watcher.
-- A later review also recorded that single-`cwd` mode in `codex-watch` only applies the `cwd` filter during bootstrap `thread/list`; live `thread/status/changed` notifications do not carry `cwd`, so project scoping in that mode is best-effort rather than a strict guarantee.
+后来包里引入了 `codex-session-watch`，它才成为正常 Codex CLI 使用场景下的主 approval 路线。

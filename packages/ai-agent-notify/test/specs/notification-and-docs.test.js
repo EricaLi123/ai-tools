@@ -161,21 +161,33 @@ module.exports = function runNotificationAndDocsTests(h) {
 
   test("README stays user-focused while internal docs remain split by topic", () => {
     const readmeContent = read("README.md");
-    const developmentContent = read("docs/development.md");
+    const docsIndexContent = read("docs/README.md");
+    const principlesContent = read("docs/principles.md");
     const architectureContent = read("docs/architecture.md");
     const approvalContent = read("docs/codex-approval.md");
     const windowsRuntimeContent = read("docs/windows-runtime.md");
+    const historyIndexContent = read("docs/history/README.md");
     const historyContent = read("docs/history/codex-completion-findings.md");
     assert(!readmeContent.includes("Reminder + Localization Responsibilities"));
     assert(!readmeContent.includes("npm link"));
     assert(!readmeContent.includes("node postinstall.js"));
-    assert(developmentContent.includes("README"));
-    assert(developmentContent.includes("./architecture.md"));
-    assert(developmentContent.includes("./codex-approval.md"));
-    assert(developmentContent.includes("./windows-runtime.md"));
-    assert(developmentContent.includes("./history/"));
     assert(!readmeContent.includes("ai-agent-notify-codex-wrapper.vbs"));
-    assert(!developmentContent.includes("AI_AGENT_NOTIFY_PAYLOAD"));
+    assert(docsIndexContent.includes("../README.md"));
+    assert(docsIndexContent.includes("./principles.md"));
+    assert(docsIndexContent.includes("./architecture.md"));
+    assert(docsIndexContent.includes("./codex-approval.md"));
+    assert(docsIndexContent.includes("./windows-runtime.md"));
+    assert(docsIndexContent.includes("./history/README.md"));
+    assert(!docsIndexContent.includes("development.md"));
+    assert(principlesContent.includes("../README.md"));
+    assert(principlesContent.includes("./architecture.md"));
+    assert(principlesContent.includes("./codex-approval.md"));
+    assert(principlesContent.includes("./windows-runtime.md"));
+    assert(principlesContent.includes("./history/"));
+    assert(principlesContent.includes("主要服务开发判断和改动决策"));
+    assert(principlesContent.includes("建议阅读顺序"));
+    assert(principlesContent.includes("一个事实只保留一个主定义位置"));
+    assert(principlesContent.includes("不负责定义当前默认方案"));
     assert(architectureContent.includes("normalizeIncomingNotification()"));
     assert(architectureContent.includes("codex-session-watch"));
     assert(architectureContent.includes("codex-mcp-sidecar"));
@@ -192,18 +204,24 @@ module.exports = function runNotificationAndDocsTests(h) {
     assert(approvalContent.includes("default.rules"));
     assert(windowsRuntimeContent.includes("ai-agent-notify.cmd"));
     assert(windowsRuntimeContent.includes("FRAME_BACKGROUND"));
+    assert(historyIndexContent.includes("路线边界"));
+    assert(historyIndexContent.includes("平台 / 信号 / 实现演进"));
     assert(historyContent.includes("os error 206"));
     assert(historyContent.includes("TUI fallback"));
   });
 
-  test("README and development docs only use valid local markdown links", () => {
+  test("README and docs only use valid local markdown links", () => {
     [
       "README.md",
-      "docs/development.md",
+      "docs/README.md",
+      "docs/principles.md",
       "docs/architecture.md",
       "docs/codex-approval.md",
       "docs/windows-runtime.md",
       "docs/history/README.md",
+      "docs/history/codex-completion-findings.md",
+      "docs/history/tab-color-history.md",
+      "docs/history/legacy-repo-codex-approval-notification-session-2026-03-18.md",
     ].forEach(assertLocalMarkdownLinksExist);
   });
 };

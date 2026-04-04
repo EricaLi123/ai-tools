@@ -47,7 +47,8 @@ module.exports = function runStructureAndRuntimeTests(h) {
     "scripts/start-hidden.vbs",
     "scripts/start-tab-color-watcher.ps1",
     "scripts/tab-color-watcher.ps1",
-    "docs/development.md",
+    "docs/README.md",
+    "docs/principles.md",
     "docs/architecture.md",
     "docs/codex-approval.md",
     "docs/windows-runtime.md",
@@ -68,6 +69,7 @@ module.exports = function runStructureAndRuntimeTests(h) {
     "lib/codex-session-watch.js",
     "lib/notification-sources.js",
     "lib/codex-sidecar-state.js",
+    "docs/development.md",
   ].forEach((relPath) => {
     test(`${relPath} removed`, () => {
       assert(!fs.existsSync(path.join(ROOT, relPath)), `${relPath} should be removed`);

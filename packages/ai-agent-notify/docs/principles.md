@@ -28,12 +28,25 @@
 - 如果某条旧路线已经被历史文档证明失败，不要在没有新证据的情况下重新捡回来当默认方案。
 - 遇到不确定的情况，优先保守保留能力，而不是先删后看。
 
-## 文档原则
+## 文档与变更纪律
 
 - [`../README.md`](../README.md)：只放用户安装、最小配置、当前限制。
-- [`architecture.md`](./architecture.md)：放根本需求、总体架构、长期边界。
-- [`codex-approval.md`](./codex-approval.md) / [`windows-runtime.md`](./windows-runtime.md)：放当前仍生效的方案、约束和原因。
-- [`history/`](./history/)：放带日期、带机器前提、带排障过程、已否决方案和结果原因。
+- [`architecture.md`](./architecture.md)：只放根本需求、总体架构、长期边界。
+- [`codex-approval.md`](./codex-approval.md) / [`windows-runtime.md`](./windows-runtime.md)：只放当前仍生效的方案、约束和原因。
+- [`history/`](./history/)：只放带日期、带机器前提、带排障过程、已否决方案和结果原因。
+- 如果改动会影响默认路线、降级策略或 public guidance，文档应先于或至少同时于实现更新。
+- 改完代码后，至少同步受影响的活跃文档和对应测试；带日期、带机器前提的结论再补进 `history/`。
+
+## 给 AI 的文档规则
+
+- 这些文档主要服务开发判断和改动决策，不是写给终端用户看的产品介绍。
+- 建议阅读顺序：先看 `principles.md`，再看 `docs/README.md`，再看 `architecture.md`，最后按主题进入专题文档或 `history/`。
+- [`docs/README.md`](./README.md) 只做导航，不重新定义默认路线、降级策略和专题结论。
+- [`architecture.md`](./architecture.md) 负责定义长期有效的主结构和职责边界，不记录临时排障细节。
+- 专题文档负责定义“当前有效方案 + 代码入口 + 最低验证点”，不要重复整套历史背景。
+- `history/` 只归档带日期、带机器前提、带排障过程和已否决路线的材料，不负责定义当前默认方案。
+- 一个事实只保留一个主定义位置；其他文档只做链接、引用或简短转述，不要多处各自下定义。
+- 写文档时优先保留“当前规则、代码入口、验证点”，少写背景故事和一次性讨论过程。
 
 ## 给 AI 的额外要求
 

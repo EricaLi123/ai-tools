@@ -1,21 +1,20 @@
 # 历史与实测归档
 
-这里存放带日期、带机器环境前提、带排障过程的材料。重点不是单纯堆时间线，而是记录：
+这里专门存放带日期、带机器环境前提、带排障过程的材料。它不负责定义“当前应该怎么做”；当前结论请回到 [`../README.md`](../README.md)、[`../architecture.md`](../architecture.md)、[`../codex-approval.md`](../codex-approval.md) 和 [`../windows-runtime.md`](../windows-runtime.md)。
 
-- 遇到过什么问题
-- 当时尝试了什么方案
-- 最终采用了什么方案
-- 为什么这样取舍
+## 什么时候看历史
 
-活跃设计结论请回到 [文档总览](../README.md) 或同级 `docs/` 下的专题文档。
+- 怀疑某条旧路线其实已经试过且失败过。
+- 当前机器出现了活跃文档没法直接解释的环境差异。
+- 需要看“为什么今天会收敛到现在这套方案”的证据链。
 
 ## 当前归档
 
-### 路线验证
+### 路线边界
 
 - [2026-03-18 legacy repo app-server approval 验证](./legacy-repo-codex-approval-notification-session-2026-03-18.md)
 
-### Windows / Codex 排障与实现演进
+### 平台 / 信号 / 实现演进
 
 - [Codex completion 实测结论](./codex-completion-findings.md)
 - [Windows Terminal Tab 颜色演进](./tab-color-history.md)

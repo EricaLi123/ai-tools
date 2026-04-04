@@ -1,47 +1,33 @@
 # 架构与职责边界
 
-这一页记录 `ai-agent-notify` 的根本需求、当前开发方向和长期不想打破的边界。更硬的开发护栏见 [`principles.md`](./principles.md)。带日期的实验、机器相关结论与排障过程统一放到 [`history/`](./history/)。
+这一页只回答三件事：
+
+- 项目到底要解决什么问题
+- 官方能力的边界在哪里
+- 当前为什么拆成 `notify`、`codex-session-watch`、`codex-mcp-sidecar` 三层
+
+更硬的改动护栏见 [`principles.md`](./principles.md)；带日期的实验和排障证据统一放到 [`history/`](./history/)。
+
+## 这页不负责什么
+
+- 不负责给用户写安装步骤和 public guidance，那是 [`../README.md`](../README.md)。
+- 不负责展开 approval 的细粒度 signal / fallback 语义，那是 [`codex-approval.md`](./codex-approval.md)。
+- 不负责展开 Windows 平台实现细节，那是 [`windows-runtime.md`](./windows-runtime.md)。
+- 不负责保存带日期的实验和机器差异，那是 [`history/`](./history/)。
 
 ## 根本需求
 
 - 用户只需要配置一次，之后继续直接使用官方 Claude Code / Codex。
-- completion 和 approval 都需要提醒，但不强迫用户改用自定义宿主或 fork。
+- completion 和 approval 都属于产品需求，不能只保留其中一条。
 - Windows 下在能做到的前提下，提醒不仅要“弹出来”，还要尽量把用户带回正确窗口 / tab。
-- 默认 public guidance 要尽量简单；临时环境问题和排障细节不能直接挤进用户文档。
+- public guidance 要尽量简单，不能把历史排障和机器特例直接堆进用户 README。
 
-## 当前方向
+## 当前边界
 
 - 默认入口 `ai-agent-notify` 继续统一收口 Claude hook stdin 和 Codex legacy notify argv。
-- completion 继续走 `notify` 直达，不走 sidecar 这条链。
-- approval 继续由 `codex-session-watch` 识别，`codex-mcp-sidecar` 只补启动期 terminal observation；两者职责故意分开。
-
-## 架构
-
-```text
-Default notify mode (Claude hook stdin JSON / Codex notify argv JSON)
-  → bin/cli.js
-      ├─ normalizeIncomingNotification()
-      ├─ 建 log 文件: %TEMP%\ai-agent-notify\session-<id>.log
-      ├─ detectTerminalContext()
-      │    ├─ scripts/find-hwnd.ps1 -IncludeShellPid
-      │    ├─ scripts/get-shell-pid.ps1
-      │    └─ 父链 shell pid 回退
-      ├─ Windows Terminal: 直接写 OSC + 启动 tab watcher
-      └─ scripts/notify.ps1
-
-Codex MCP sidecar
-  → bin/cli.js codex-mcp-sidecar
-      ├─ 继承 process.cwd() 作为真实项目目录
-      ├─ 记录启动期 hwnd / shellPid / isWindowsTerminal
-      ├─ 扫描 rollout 反推最可能的 sessionId
-      └─ 兜底启动 codex-session-watch
-```
-
-## 为什么是这套边界
-
-### 为什么默认入口要同时兼容 stdin / argv
-
-Claude Code 的 hook 习惯是把 JSON 通过 stdin 传进来；Codex 旧版 `notify` 则把 JSON payload 作为最后一个 argv 追加给命令。当前项目把两种 transport 统一收口到 `normalizeIncomingNotification()`，这样对外只需要一个命令名 `ai-agent-notify`，不必为 Claude / Codex 维护多套入口。
+- completion 继续走 `notify` 直达，不走 sidecar 链路。
+- approval 继续由 `codex-session-watch` 识别，`codex-mcp-sidecar` 只负责记录启动期 terminal observation 和兜底拉起 watcher。
+- `sessionId -> terminal context` 的解释权收口在 watcher，而不是 sidecar。
 
 ## 官方约束
 
@@ -51,24 +37,24 @@ Claude Code 的 hook 习惯是把 JSON 通过 stdin 传进来；Codex 旧版 `no
 - `tui.notification_method` 只是控制 TUI 自己发 `osc9` / `bel`。
 - `features.codex_hooks` 在 config reference 里仍是 under development / off by default，当前没有公开 lifecycle hook 文档可用于主路线设计。
 
-## 提醒 + 定位的职责拆分
+## 通道职责拆分
 
-### 通道能力矩阵
+### 能力矩阵
 
 | 通道 | 能稳定拿到 | 拿不到 / 不应假设能拿到 | 适合承担的职责 |
 | --- | --- | --- | --- |
-| `codex-mcp-sidecar` | session 启动时机、继承的 `cwd`、本机父进程链、可自行探测的 `hwnd` / `shellPid` | 启动瞬间的官方 `sessionId`、`threadId`、`turnId`、approval 事件、官方 tab id | approval 场景的启动期终端 observation、兜底拉起 watcher |
+| `codex-mcp-sidecar` | session 启动时机、继承的 `cwd`、本机父进程链、可自行探测的 `hwnd` / `shellPid` | 启动瞬间的官方 `sessionId`、`threadId`、`turnId`、approval 事件、官方 tab id | approval 场景的启动期 terminal observation、兜底拉起 watcher |
 | Codex legacy `notify` | 一次性 completion payload，常见场景下的 `thread-id` / `turn-id` / `cwd`，以及它触发当场可直接探测到的终端上下文 | approval 请求 | 完成类通知 + completion 当场定位 |
 | `codex-session-watch` | rollout `sessionId`、approval event、`cwd`、TUI 里的早期 approval 线索 | 启动当场的终端句柄、原始 tab 句柄 | approval 检测 + 提醒触发 |
 
-### 当前项目里的真实数据流
+### 当前数据流
 
 ```text
 Completion:
   Codex turn complete
     ├─ 触发 legacy notify
-    ├─ ai-agent-notify 当场解析 completion payload
-    ├─ cli.js 直接探测当前终端上下文
+    ├─ ai-agent-notify 用 normalizeIncomingNotification() 统一收口 payload
+    ├─ cli.js 当场探测当前终端上下文
     └─ notify.ps1 发 toast / flash / open
 
 Approval:
@@ -77,7 +63,7 @@ Approval:
     │    ├─ 读取继承到的 cwd
     │    ├─ 在本机父链里找 shellPid / hwnd
     │    ├─ 若 watcher 未运行则隐藏拉起 codex-session-watch
-    │    └─ 把“启动期终端 observation”写到 sidecar state
+    │    └─ 把“启动期 terminal observation”写到 sidecar state
     └─ 后续真正发生 approval
          ├─ rollout JSONL / codex-tui.log 被 codex-session-watch 看到
          ├─ watcher 得到 sessionId / approvalKind / turnId 等语义线索
@@ -87,17 +73,41 @@ Approval:
          └─ notify.ps1 发 toast / flash / open
 ```
 
-completion 不走 sidecar 这条链。只有 approval 的提醒触发与定位，才是 `codex-session-watch + codex-mcp-sidecar` 的组合结果。
+completion 不走 sidecar。只有 approval 的检测、定位增强和回退，才属于 `codex-session-watch + codex-mcp-sidecar` 这条组合链。
 
-### 为什么 hwnd 查找在 Node 侧
+## 为什么这样拆
 
-VSCode/Cursor 集成 git bash 场景下，MSYS2 bash fork 会断开 PowerShell 自身的父进程链，但 `node.exe` 是纯 Win32 进程，其父链完整，因此在 Node 侧做 `hwnd` / `shellPid` 查找更可靠。
+### 为什么默认入口要同时兼容 stdin / argv
 
-## 相关文档
+Claude Code 的 hook 习惯是把 JSON 通过 stdin 传进来；Codex 旧版 `notify` 则把 JSON payload 作为最后一个 argv 追加给命令。当前项目把两种 transport 统一收口到 `normalizeIncomingNotification()`，这样对外只需要一个命令名 `ai-agent-notify`，不必为 Claude / Codex 维护两套入口。
 
-- [文档总览](./README.md)
-- [开发原则](./principles.md)
+### 为什么 `hwnd` / `shellPid` 查找放在 Node 侧
+
+VSCode/Cursor 集成 git bash 场景下，MSYS2 bash fork 会断开 PowerShell 自身的父进程链，但 `node.exe` 是纯 Win32 进程，其父链更完整，因此在 Node 侧做 `hwnd` / `shellPid` 查找更可靠。
+
+### 为什么 approval 的 session 解释权在 watcher
+
+sidecar 擅长记录“这次 session 从哪个终端启动”；watcher 擅长解释“后面哪个 approval 属于哪个 session”。把 `sessionId -> terminal context` 的解释权收口到 watcher，有几个直接好处：
+
+- approval 语义只在一处定义
+- fallback、TTL 和 build replace 这类状态语义不再分散
+- sidecar 不需要自己扫描 rollout 或做长期状态解释
+
+## 核心代码入口
+
+| 主题 | 主要文件 |
+| --- | --- |
+| CLI 总入口与模式分发 | [`../bin/cli.js`](../bin/cli.js) |
+| completion / notify payload 收口 | [`../lib/notification-source-parsers.js`](../lib/notification-source-parsers.js) |
+| 通知 runtime 与日志 | [`../lib/notify-runtime.js`](../lib/notify-runtime.js) |
+| 终端上下文探测 | [`../lib/notify-terminal-context.js`](../lib/notify-terminal-context.js) |
+| approval watcher 主循环 | [`../lib/codex-session-watch-runner.js`](../lib/codex-session-watch-runner.js) |
+| rollout 文件扫描与 metadata | [`../lib/codex-session-watch-files.js`](../lib/codex-session-watch-files.js) |
+| approval 事件流处理 | [`../lib/codex-session-watch-streams.js`](../lib/codex-session-watch-streams.js)、[`../lib/codex-session-watch-handlers.js`](../lib/codex-session-watch-handlers.js) |
+| sidecar 记录与 reconcile | [`../lib/codex-mcp-sidecar-mode.js`](../lib/codex-mcp-sidecar-mode.js)、[`../lib/codex-sidecar-matcher.js`](../lib/codex-sidecar-matcher.js)、[`../lib/codex-sidecar-store.js`](../lib/codex-sidecar-store.js) |
+
+## 下一步阅读
+
 - [Codex approval 检测与定位](./codex-approval.md)
 - [Windows 运行时与通知实现](./windows-runtime.md)
-- [Codex completion 实测结论](./history/codex-completion-findings.md)
-- [Windows Terminal Tab 颜色演进](./history/tab-color-history.md)
+- [历史与实测归档](./history/README.md)

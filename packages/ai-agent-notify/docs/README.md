@@ -1,49 +1,34 @@
 # 文档总览
 
-改代码或改文档前，先看 [`principles.md`](./principles.md)。
+改代码、改默认路线、改文档结构前，先看 [`principles.md`](./principles.md)。
 
-`ai-agent-notify` 的文档分成五层：
+## 当前主线
 
-- [`principles.md`](./principles.md)：给开发者和 AI 的硬约束，定义什么不能乱改。
-- `README.md`：给使用者看的最小安装、配置和限制说明。
-- 活跃设计文档：记录当前仍生效的需求、架构、方案和取舍。
-- 开发维护文档：记录这套文档应该怎么更新，避免内容放错地方。
-- `history/`：记录已经遇到过的问题、试过的方案、结果和原因，避免重复踩坑。
-
-## 先看当前主线
-
+- 用户安装、最小配置和当前限制只放在 [`../README.md`](../README.md)。
 - completion 通知继续走顶层 `notify` 直达。
 - approval 通知继续走 `codex-session-watch + codex-mcp-sidecar`。
-- README 当前公开推荐“先安装包，再用 `ai-agent-notify.cmd` 直配命令”。
-- Windows 下如果配置项属于 direct process launch，命令名显式写 `.cmd`。
+- Windows direct process launch 语境下，命令名显式写 `ai-agent-notify.cmd` / `npx.cmd`。
 
-## 阅读顺序
+## 建议阅读顺序
 
-1. [`principles.md`](./principles.md)：先看不能乱改什么。
-2. [`architecture.md`](./architecture.md)：再看根本需求、长期方向和职责边界。
-3. [`codex-approval.md`](./codex-approval.md)：看 Codex approval 当前怎么做、为什么这样做。
-4. [`windows-runtime.md`](./windows-runtime.md)：需要改 Windows 行为时再看运行时约束和兼容性方案。
-5. [`history/`](./history/)：只有在要改现有方案、怀疑回到旧坑、或需要看排障证据时再展开。
+1. [`principles.md`](./principles.md)：先看哪些边界不能随手打破。
+2. [`architecture.md`](./architecture.md)：再看项目目的、官方约束和总体职责拆分。
+3. [`codex-approval.md`](./codex-approval.md)：需要理解 approval 路线时再展开。
+4. [`windows-runtime.md`](./windows-runtime.md)：需要改 Windows 行为时再看运行时约束。
+5. [`history/README.md`](./history/README.md)：只有在回溯旧方案、排障证据或机器特例时再看。
 
-## 文档分工
+## 按改动类型进入
 
-- [`principles.md`](./principles.md)：记录开发者和 AI 必须先遵守的产品原则与文档原则。
-- [`architecture.md`](./architecture.md)：记录根本需求、总体架构和长期不想打破的边界。
-- [`codex-approval.md`](./codex-approval.md)：记录 approval 这条线当前采用的方案、配置和原因。
-- [`windows-runtime.md`](./windows-runtime.md)：记录 Windows 运行时约束、兼容性问题和当前采用方案。
-- [`development.md`](./development.md)：记录开发时如何更新这些文档，防止信息散掉。
-- [`history/`](./history/)：记录历史问题、试错路径、采用结果和原因。
+- 要改 completion 通知入口、payload 解析、基础通知流：先看 [`architecture.md`](./architecture.md) 和 [`windows-runtime.md`](./windows-runtime.md)，再看 [`../bin/cli.js`](../bin/cli.js)、[`../lib/notification-source-parsers.js`](../lib/notification-source-parsers.js)、[`../lib/notify-runtime.js`](../lib/notify-runtime.js)。
+- 要改 approval 检测、定位、fallback、sidecar 语义：先看 [`codex-approval.md`](./codex-approval.md)，再看 [`../lib/codex-session-watch-runner.js`](../lib/codex-session-watch-runner.js)、[`../lib/codex-sidecar-matcher.js`](../lib/codex-sidecar-matcher.js)、[`../lib/codex-mcp-sidecar-mode.js`](../lib/codex-mcp-sidecar-mode.js)。
+- 要改 Windows 窗口定位、图标、任务栏闪烁、WT tab 颜色：直接看 [`windows-runtime.md`](./windows-runtime.md)，再看 [`../lib/notify-terminal-context.js`](../lib/notify-terminal-context.js)、[`../scripts/notify.ps1`](../scripts/notify.ps1)、[`../scripts/start-tab-color-watcher.ps1`](../scripts/start-tab-color-watcher.ps1)、[`../scripts/tab-color-watcher.ps1`](../scripts/tab-color-watcher.ps1)。
+- 要判断某条旧路线是否已经被否决：先看 [`history/README.md`](./history/README.md)，不要直接从旧实验结论反推当前默认方案。
 
-## 更新时放哪里
+## 文档分层
 
-- 用户安装方式、最小配置、当前限制：写到 [`../README.md`](../README.md)。
-- 当前仍生效的架构、配置、实现约束：写到活跃设计文档。
-- 带日期、带机器前提、带排障过程、已经否决的路线：写到 [`history/`](./history/)。
-
-## 相关入口
-
-- [架构与职责边界](./architecture.md)
-- [开发原则](./principles.md)
-- [Codex approval 检测与定位](./codex-approval.md)
-- [Windows 运行时与通知实现](./windows-runtime.md)
-- [历史与实测归档](./history/README.md)
+- [`../README.md`](../README.md)：只放面向用户的安装、配置、限制和最小示例。
+- [`principles.md`](./principles.md)：只放不能轻易打破的约束。
+- [`architecture.md`](./architecture.md)：只放根本需求、官方边界和长期职责拆分。
+- [`codex-approval.md`](./codex-approval.md)：只放当前仍生效的 approval 路线、fallback 和 sidecar 语义。
+- [`windows-runtime.md`](./windows-runtime.md)：只放当前仍生效的 Windows 运行时约定。
+- [`history/`](./history/)：只放带日期、带机器前提、带试错过程的归档。
