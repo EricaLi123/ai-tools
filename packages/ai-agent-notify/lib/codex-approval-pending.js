@@ -207,6 +207,7 @@ function flushPendingApprovalNotifications({
   emittedEventKeys,
   pendingApprovalNotifications,
   pendingApprovalCallIds,
+  sessionsDir,
 }) {
   const now = Date.now();
   Array.from(pendingApprovalNotifications.entries()).forEach(([key, pending]) => {
@@ -238,6 +239,7 @@ function flushPendingApprovalNotifications({
       terminal,
       emittedEventKeys,
       origin: "pending",
+      sessionsDir,
     });
   });
 }

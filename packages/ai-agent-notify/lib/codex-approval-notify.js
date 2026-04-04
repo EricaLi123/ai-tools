@@ -1,10 +1,18 @@
 const {
   findSidecarTerminalContextForProjectDir,
   findSidecarTerminalContextForSession,
+  reconcileSidecarSessions,
 } = require("./codex-sidecar-matcher");
 const { emitNotification } = require("./notify-runtime");
 
-function emitCodexApprovalNotification({ event, runtime, terminal, emittedEventKeys, origin }) {
+function emitCodexApprovalNotification({
+  event,
+  runtime,
+  terminal,
+  emittedEventKeys,
+  origin,
+  sessionsDir,
+}) {
   if (!shouldEmitEventKey(emittedEventKeys, event.dedupeKey)) {
     return false;
   }
@@ -18,6 +26,7 @@ function emitCodexApprovalNotification({ event, runtime, terminal, emittedEventK
     projectDir: event.projectDir,
     fallbackTerminal: terminal,
     log: runtime.log,
+    sessionsDir,
   });
 
   const child = emitNotification({
@@ -58,8 +67,23 @@ function shouldEmitEventKey(emittedEventKeys, eventKey) {
   return true;
 }
 
-function resolveApprovalTerminalContext({ sessionId, projectDir, fallbackTerminal, log }) {
-  const terminal = findSidecarTerminalContextForSession(sessionId, log);
+function resolveApprovalTerminalContext({ sessionId, projectDir, fallbackTerminal, log, sessionsDir }) {
+  let terminal = findSidecarTerminalContextForSession(sessionId, log);
+  if ((!terminal || (!terminal.hwnd && !terminal.shellPid)) && sessionsDir) {
+    const reconciled = reconcileSidecarSessions({
+      sessionsDir,
+      targetSessionId: sessionId,
+      projectDir,
+      log,
+    });
+    if (reconciled > 0 && typeof log === "function") {
+      log(
+        `approval terminal watcher reconcile retried sessionId=${sessionId || "unknown"} projectDir=${projectDir || ""} reconciled=${reconciled}`
+      );
+    }
+    terminal = findSidecarTerminalContextForSession(sessionId, log);
+  }
+
   if (!terminal || (!terminal.hwnd && !terminal.shellPid)) {
     if (typeof log === "function") {
       log(

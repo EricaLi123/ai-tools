@@ -10,6 +10,7 @@ const {
   createSessionFileState,
   listRolloutFiles,
 } = require("./codex-session-watch-files");
+const { reconcileSidecarSessions } = require("./codex-sidecar-matcher");
 const {
   consumeSessionFileUpdates,
   pruneEmittedEventKeys,
@@ -132,6 +133,7 @@ async function runCodexSessionWatchMode(argv) {
 
         consumeSessionFileUpdates(state, stat, {
           runtime,
+          sessionsDir,
           terminal,
           emittedEventKeys,
           pendingApprovalNotifications,
@@ -159,9 +161,15 @@ async function runCodexSessionWatchMode(argv) {
         }
       });
 
+      reconcileSidecarSessions({
+        sessionsDir,
+        log: runtime.log,
+      });
+
       tuiLogState = syncCodexTuiLogState(tuiLogState, tuiLogPath, {
         initialScan,
         runtime,
+        sessionsDir,
         terminal,
         emittedEventKeys,
         sessionProjectDirs,
@@ -175,6 +183,7 @@ async function runCodexSessionWatchMode(argv) {
 
       flushPendingApprovalNotifications({
         runtime,
+        sessionsDir,
         terminal,
         emittedEventKeys,
         pendingApprovalNotifications,

@@ -16,6 +16,7 @@ function consumeSessionFileUpdates(
   stat,
   {
     runtime,
+    sessionsDir,
     terminal,
     emittedEventKeys,
     pendingApprovalNotifications,
@@ -36,6 +37,7 @@ function consumeSessionFileUpdates(
       }
       handleSessionRecord(state, line, {
         runtime,
+        sessionsDir,
         terminal,
         emittedEventKeys,
         pendingApprovalNotifications,
@@ -94,6 +96,7 @@ function consumeCodexTuiLogUpdates(
   stat,
   {
     runtime,
+    sessionsDir,
     terminal,
     emittedEventKeys,
     sessionProjectDirs,
@@ -113,6 +116,7 @@ function consumeCodexTuiLogUpdates(
     onLine: (line) => {
       handleCodexTuiLogLine(state, line, {
         runtime,
+        sessionsDir,
         terminal,
         emittedEventKeys,
         sessionProjectDirs,

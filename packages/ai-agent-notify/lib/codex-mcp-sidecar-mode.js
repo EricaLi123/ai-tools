@@ -4,7 +4,6 @@ const readline = require("readline");
 
 const { handleMcpServerMessage } = require("./codex-mcp-server");
 const { ensureCodexSessionWatchRunning } = require("./codex-session-watch-runner");
-const { resolveSidecarSessionCandidate, startSidecarSessionResolver } = require("./codex-sidecar-resolver");
 const { writeSidecarRecord } = require("./codex-sidecar-store");
 const { createRuntime, findParentInfo } = require("./notify-runtime");
 const { stripUtf8Bom } = require("./shared-utils");
@@ -36,24 +35,12 @@ async function runCodexMcpSidecarMode({ argv, cliPath, packageVersion }) {
     `started mode=codex-mcp-sidecar cwd=${sidecarRecord.cwd} shellPid=${sidecarRecord.shellPid || ""} hwnd=${sidecarRecord.hwnd || ""} sessionsDir=${sessionsDir} packageRoot=${runtime.buildInfo.packageRoot}`
   );
 
-  const resolver = startSidecarSessionResolver({
-    getCurrentRecord: () => sidecarRecord,
-    updateRecord(nextRecord) {
-      sidecarRecord = writeSidecarRecord(nextRecord);
-      return sidecarRecord;
-    },
-    sessionsDir,
-    log: runtime.log,
-    findCandidate: resolveSidecarSessionCandidate,
-  });
-
   let cleanedUp = false;
   const cleanup = () => {
     if (cleanedUp) {
       return;
     }
     cleanedUp = true;
-    resolver.stop();
     runtime.log(
       `stopped mode=codex-mcp-sidecar recordId=${recordId} sessionId=${sidecarRecord.sessionId || ""} retained=1`
     );
@@ -70,10 +57,7 @@ async function runCodexMcpSidecarMode({ argv, cliPath, packageVersion }) {
   });
 
   try {
-    await Promise.all([
-      serveMinimalMcpServer({ packageVersion, runtime }),
-      resolver.done,
-    ]);
+    await serveMinimalMcpServer({ packageVersion, runtime });
   } finally {
     cleanup();
   }

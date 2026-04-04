@@ -1,4 +1,5 @@
 const { parsePositiveInteger } = require("./shared-utils");
+const { resolveSidecarSessionCandidate } = require("./codex-sidecar-resolver");
 const {
   countCommonSegments,
   normalizeWindowsPath,
@@ -38,6 +39,58 @@ function findSidecarTerminalContextForSession(sessionId, log) {
     isWindowsTerminal: match.isWindowsTerminal === true,
     sessionId: match.sessionId,
   };
+}
+
+function reconcileSidecarSessions({ sessionsDir, targetSessionId = "", projectDir = "", log }) {
+  if (!sessionsDir) {
+    return 0;
+  }
+
+  pruneStaleSidecarRecords(log);
+
+  const candidates = readAllSidecarRecords(log).filter((record) => {
+    if (record.sessionId || !record.cwd || !parseTime(record.startedAt)) {
+      return false;
+    }
+
+    if (!projectDir) {
+      return true;
+    }
+
+    return Boolean(describeProjectDirMatch(record.cwd, projectDir));
+  });
+
+  let resolvedCount = 0;
+  candidates.forEach((record) => {
+    const candidate = resolveSidecarSessionCandidate({
+      cwd: record.cwd,
+      sessionsDir,
+      startedAtMs: parseTime(record.startedAt),
+      log,
+    });
+    if (!candidate) {
+      return;
+    }
+    if (targetSessionId && candidate.sessionId !== targetSessionId) {
+      return;
+    }
+
+    const resolvedAt = new Date().toISOString();
+    writeSidecarRecord({
+      ...record,
+      sessionId: candidate.sessionId,
+      resolvedAt,
+    });
+    resolvedCount += 1;
+
+    if (typeof log === "function") {
+      log(
+        `watcher reconciled sidecar observation recordId=${record.recordId || ""} sessionId=${candidate.sessionId} file=${candidate.filePath} scoreMs=${candidate.score} reference=${candidate.referenceKind}`
+      );
+    }
+  });
+
+  return resolvedCount;
 }
 
 function findSidecarTerminalContextForProjectDir(projectDir, log) {
@@ -176,4 +229,5 @@ function compareProjectDirFallbackCandidates(left, right) {
 module.exports = {
   findSidecarTerminalContextForProjectDir,
   findSidecarTerminalContextForSession,
+  reconcileSidecarSessions,
 };

@@ -124,6 +124,75 @@ module.exports = function runSidecarTests(h) {
     }
   });
 
+  test("watcher reconcile turns raw sidecar observations into exact session mappings", () => {
+    const fixtureRoot = path.join(ROOT, `.tmp-sidecar-reconcile-${Date.now()}`);
+    const sessionsDir = path.join(fixtureRoot, "2026", "04", "04");
+    const sessionId = `session-reconcile-${Date.now()}`;
+    const rolloutPath = path.join(
+      sessionsDir,
+      `rollout-2026-04-04T15-00-00-${sessionId}.jsonl`
+    );
+    const recordId = `test-sidecar-reconcile-${process.pid}-${Date.now()}`;
+    const startedAt = new Date().toISOString();
+
+    try {
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.writeFileSync(
+        rolloutPath,
+        [
+          JSON.stringify({
+            timestamp: startedAt,
+            type: "session_meta",
+            payload: {
+              id: sessionId,
+              cwd: TEST_PROJECT_DIR,
+            },
+          }),
+          JSON.stringify({
+            timestamp: startedAt,
+            type: "turn_context",
+            payload: {
+              cwd: TEST_PROJECT_DIR,
+            },
+          }),
+        ].join("\n"),
+        "utf8"
+      );
+
+      sidecarState.writeSidecarRecord({
+        recordId,
+        pid: 999999,
+        parentPid: process.ppid,
+        cwd: TEST_PROJECT_DIR,
+        sessionId: "",
+        startedAt,
+        resolvedAt: "",
+        hwnd: 3456,
+        shellPid: 7890,
+        isWindowsTerminal: true,
+      });
+
+      const reconciled = sidecarState.reconcileSidecarSessions({
+        sessionsDir: fixtureRoot,
+        targetSessionId: sessionId,
+        projectDir: TEST_PROJECT_DIR,
+        log: () => {},
+      });
+
+      assert(reconciled === 1, "expected watcher reconcile to resolve one observation");
+
+      const terminal = sidecarState.findSidecarTerminalContextForSession(sessionId);
+      assert(terminal);
+      assert(terminal.sessionId === sessionId);
+      assert(terminal.hwnd === 3456);
+      assert(terminal.shellPid === 7890);
+      assert(terminal.isWindowsTerminal === true);
+    } finally {
+      sidecarState.deleteSidecarRecord(recordId);
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
   test("mcp sidecar writes JSON-RPC responses", () => {
     const writes = [];
     const originalWrite = process.stdout.write;
@@ -366,6 +435,92 @@ module.exports = function runSidecarTests(h) {
       );
     } finally {
       sidecarState.deleteSidecarRecord(recordId);
+    }
+  });
+
+  test("approval terminal resolution lets watcher reconcile raw observations into exact matches", () => {
+    const fixtureRoot = path.join(ROOT, `.tmp-sidecar-approval-reconcile-${Date.now()}`);
+    const sessionsDir = path.join(fixtureRoot, "2026", "04", "04");
+    const sessionId = `session-approval-reconcile-${Date.now()}`;
+    const rolloutPath = path.join(
+      sessionsDir,
+      `rollout-2026-04-04T16-00-00-${sessionId}.jsonl`
+    );
+    const recordId = `test-sidecar-approval-reconcile-${process.pid}-${Date.now()}`;
+    const startedAt = new Date().toISOString();
+    const logs = [];
+
+    try {
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.writeFileSync(
+        rolloutPath,
+        [
+          JSON.stringify({
+            timestamp: startedAt,
+            type: "session_meta",
+            payload: {
+              id: sessionId,
+              cwd: TEST_PROJECT_DIR,
+            },
+          }),
+          JSON.stringify({
+            timestamp: startedAt,
+            type: "turn_context",
+            payload: {
+              cwd: TEST_PROJECT_DIR,
+            },
+          }),
+        ].join("\n"),
+        "utf8"
+      );
+
+      sidecarState.writeSidecarRecord({
+        recordId,
+        pid: 999999,
+        parentPid: process.ppid,
+        cwd: TEST_PROJECT_DIR,
+        sessionId: "",
+        startedAt,
+        resolvedAt: "",
+        hwnd: 9753,
+        shellPid: 8642,
+        isWindowsTerminal: true,
+      });
+
+      const terminal = approval.resolveApprovalTerminalContext({
+        sessionId,
+        projectDir: TEST_PROJECT_DIR,
+        fallbackTerminal: {
+          hwnd: null,
+          shellPid: null,
+          isWindowsTerminal: false,
+        },
+        log: (message) => logs.push(message),
+        sessionsDir: fixtureRoot,
+      });
+
+      assert(terminal);
+      assert(terminal.hwnd === 9753);
+      assert(terminal.shellPid === 8642);
+      assert(terminal.isWindowsTerminal === true);
+      assert(
+        logs.some((message) =>
+          message.includes("watcher reconciled sidecar observation")
+        )
+      );
+      assert(
+        logs.some((message) =>
+          message.includes("approval terminal watcher reconcile retried")
+        )
+      );
+      assert(
+        logs.some((message) =>
+          message.includes("approval terminal resolved via exact sidecar match")
+        )
+      );
+    } finally {
+      sidecarState.deleteSidecarRecord(recordId);
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
     }
   });
 };

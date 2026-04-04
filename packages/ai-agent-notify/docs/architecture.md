@@ -13,7 +13,7 @@
 
 - 默认入口 `ai-agent-notify` 继续统一收口 Claude hook stdin 和 Codex legacy notify argv。
 - completion 继续走 `notify` 直达，不走 sidecar 这条链。
-- approval 继续由 `codex-session-watch` 识别，`codex-mcp-sidecar` 只补启动期 terminal context；两者职责故意分开。
+- approval 继续由 `codex-session-watch` 识别，`codex-mcp-sidecar` 只补启动期 terminal observation；两者职责故意分开。
 
 ## 架构
 
@@ -57,7 +57,7 @@ Claude Code 的 hook 习惯是把 JSON 通过 stdin 传进来；Codex 旧版 `no
 
 | 通道 | 能稳定拿到 | 拿不到 / 不应假设能拿到 | 适合承担的职责 |
 | --- | --- | --- | --- |
-| `codex-mcp-sidecar` | session 启动时机、继承的 `cwd`、本机父进程链、可自行探测的 `hwnd` / `shellPid` | 启动瞬间的官方 `sessionId`、`threadId`、`turnId`、approval 事件、官方 tab id | approval 场景的启动期终端线索、兜底拉起 watcher |
+| `codex-mcp-sidecar` | session 启动时机、继承的 `cwd`、本机父进程链、可自行探测的 `hwnd` / `shellPid` | 启动瞬间的官方 `sessionId`、`threadId`、`turnId`、approval 事件、官方 tab id | approval 场景的启动期终端 observation、兜底拉起 watcher |
 | Codex legacy `notify` | 一次性 completion payload，常见场景下的 `thread-id` / `turn-id` / `cwd`，以及它触发当场可直接探测到的终端上下文 | approval 请求 | 完成类通知 + completion 当场定位 |
 | `codex-session-watch` | rollout `sessionId`、approval event、`cwd`、TUI 里的早期 approval 线索 | 启动当场的终端句柄、原始 tab 句柄 | approval 检测 + 提醒触发 |
 
@@ -77,11 +77,11 @@ Approval:
     │    ├─ 读取继承到的 cwd
     │    ├─ 在本机父链里找 shellPid / hwnd
     │    ├─ 若 watcher 未运行则隐藏拉起 codex-session-watch
-    │    └─ 把“启动期终端线索”写到 sidecar state
+    │    └─ 把“启动期终端 observation”写到 sidecar state
     └─ 后续真正发生 approval
          ├─ rollout JSONL / codex-tui.log 被 codex-session-watch 看到
          ├─ watcher 得到 sessionId / approvalKind / turnId 等语义线索
-         ├─ watcher 按 sessionId 查询 sidecar state
+         ├─ watcher reconcile sidecar observation，并按 sessionId 查询 sidecar state
          │    ├─ 命中: 复用保存下来的 hwnd / shellPid 做定位增强
          │    └─ 未命中: 先尝试 `projectDir` / `cwd` 窗口级回退；再不行才退回 neutral Toast-only
          └─ notify.ps1 发 toast / flash / open

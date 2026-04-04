@@ -167,6 +167,8 @@ module.exports = function runStructureAndRuntimeTests(h) {
     assert(mcpSidecarModeContent.includes('require("./codex-session-watch-runner")'));
     assert(mcpSidecarModeContent.includes("function runCodexMcpSidecarMode("));
     assert(mcpSidecarModeContent.includes("ensureCodexSessionWatchRunning"));
+    assert(!mcpSidecarModeContent.includes("startSidecarSessionResolver"));
+    assert(!mcpSidecarModeContent.includes("resolveSidecarSessionCandidate"));
     assert(mcpServerContent.includes('case "initialize"'));
     assert(mcpServerContent.includes('case "ping"'));
     assert(mcpServerContent.includes('case "tools/list"'));
@@ -206,9 +208,11 @@ module.exports = function runStructureAndRuntimeTests(h) {
     assert(sidecarMatcherContent.includes('require("./windows-paths")'));
     assert(sidecarMatcherContent.includes('require("./codex-sidecar-store")'));
     assert(sidecarMatcherContent.includes("function findSidecarTerminalContextForSession("));
+    assert(sidecarMatcherContent.includes("function reconcileSidecarSessions("));
     assert(sidecarResolverContent.includes('require("./codex-session-watch-files")'));
     assert(sidecarResolverContent.includes('require("./shared-utils")'));
     assert(sidecarResolverContent.includes("function resolveSidecarSessionCandidate("));
+    assert(!sidecarResolverContent.includes("function startSidecarSessionResolver("));
     assert(sidecarStoreContent.includes("function writeSidecarRecord("));
     assert(sidecarStoreContent.includes("function pruneStaleSidecarRecords("));
   });

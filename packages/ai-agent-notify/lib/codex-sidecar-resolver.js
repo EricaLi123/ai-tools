@@ -5,87 +5,8 @@ const { listRolloutFiles, readRolloutMetadata } = require("./codex-session-watch
 const { fileExistsCaseInsensitive } = require("./shared-utils");
 const { isSameWindowsPath } = require("./windows-paths");
 
-const SIDECAR_SESSION_RESOLUTION_POLL_MS = 1000;
-const SIDECAR_SESSION_RESOLUTION_TIMEOUT_MS = 90 * 1000;
 const SIDECAR_SESSION_RESOLUTION_MAX_PAST_MS = 30 * 1000;
 const SIDECAR_SESSION_RESOLUTION_MAX_FUTURE_MS = 10 * 60 * 1000;
-
-function startSidecarSessionResolver({
-  getCurrentRecord,
-  updateRecord,
-  sessionsDir,
-  log,
-  findCandidate,
-  pollMs = SIDECAR_SESSION_RESOLUTION_POLL_MS,
-  timeoutMs = SIDECAR_SESSION_RESOLUTION_TIMEOUT_MS,
-}) {
-  let attempts = 0;
-  let interval = null;
-  let stopped = false;
-  let resolveDone = () => {};
-  const done = new Promise((resolve) => {
-    resolveDone = resolve;
-  });
-
-  const tick = () => {
-    if (stopped) {
-      return;
-    }
-
-    const currentRecord = getCurrentRecord();
-    if (!currentRecord || currentRecord.sessionId) {
-      stop();
-      return;
-    }
-
-    attempts += 1;
-    const candidate = findCandidate({
-      cwd: currentRecord.cwd,
-      sessionsDir,
-      startedAtMs: Date.parse(currentRecord.startedAt),
-      log,
-    });
-
-    if (candidate) {
-      const resolvedAt = new Date().toISOString();
-      updateRecord({
-        ...currentRecord,
-        sessionId: candidate.sessionId,
-        resolvedAt,
-      });
-      log(
-        `resolved mcp sidecar sessionId=${candidate.sessionId} file=${candidate.filePath} scoreMs=${candidate.score} reference=${candidate.referenceKind}`
-      );
-      stop();
-      return;
-    }
-
-    if (attempts * pollMs >= timeoutMs) {
-      log(`mcp sidecar session resolution timed out cwd=${currentRecord.cwd} timeoutMs=${timeoutMs}`);
-      stop();
-    }
-  };
-
-  interval = setInterval(tick, pollMs);
-  tick();
-
-  return {
-    done,
-    stop,
-  };
-
-  function stop() {
-    if (stopped) {
-      return;
-    }
-    stopped = true;
-    if (interval) {
-      clearInterval(interval);
-      interval = null;
-    }
-    resolveDone();
-  }
-}
 
 function resolveSidecarSessionCandidate({
   cwd,
@@ -248,5 +169,4 @@ module.exports = {
   parseRolloutTimestampFromPath,
   pickSidecarSessionCandidate,
   resolveSidecarSessionCandidate,
-  startSidecarSessionResolver,
 };

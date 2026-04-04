@@ -30,6 +30,7 @@ function handleSessionRecord(
   line,
   {
     runtime,
+    sessionsDir,
     terminal,
     emittedEventKeys,
     pendingApprovalNotifications,
@@ -133,6 +134,7 @@ function handleSessionRecord(
       terminal,
       emittedEventKeys,
       origin: "session",
+      sessionsDir,
     });
     return;
   }
@@ -147,6 +149,7 @@ function handleSessionRecord(
     recentRequireEscalatedEvents,
     sessionApprovalGrants,
     approvedCommandRuleCache,
+    sessionsDir,
     origin: "session",
     approvalPolicy: state.approvalPolicy,
     sandboxPolicy: state.sandboxPolicy,
@@ -159,6 +162,7 @@ function handleCodexTuiLogLine(
   line,
   {
     runtime,
+    sessionsDir,
     terminal,
     emittedEventKeys,
     sessionProjectDirs,
@@ -215,6 +219,7 @@ function handleCodexTuiLogLine(
       terminal,
       emittedEventKeys,
       origin: "tui",
+      sessionsDir,
     });
     return;
   }
@@ -230,6 +235,7 @@ function handleCodexTuiLogLine(
     recentRequireEscalatedEvents,
     sessionApprovalGrants,
     approvedCommandRuleCache,
+    sessionsDir,
     origin: "tui",
     approvalPolicy: approvalContext && approvalContext.approvalPolicy,
     sandboxPolicy: approvalContext && approvalContext.sandboxPolicy,
@@ -247,6 +253,7 @@ function processRequireEscalatedEvent({
   recentRequireEscalatedEvents,
   sessionApprovalGrants,
   approvedCommandRuleCache,
+  sessionsDir,
   origin,
   approvalPolicy,
   sandboxPolicy,
@@ -281,6 +288,7 @@ function processRequireEscalatedEvent({
       terminal,
       emittedEventKeys,
       origin,
+      sessionsDir,
     });
     return;
   }
