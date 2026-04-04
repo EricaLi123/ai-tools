@@ -1,6 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
+const { listRolloutFiles, readRolloutMetadata } = require("./codex-session-watch-files");
+const { fileExistsCaseInsensitive } = require("./shared-utils");
 const { isSameWindowsPath } = require("./windows-paths");
 
 const SIDECAR_SESSION_RESOLUTION_POLL_MS = 1000;
@@ -90,18 +92,8 @@ function resolveSidecarSessionCandidate({
   sessionsDir,
   startedAtMs,
   log,
-  fileExistsCaseInsensitive,
-  listRolloutFiles,
-  readRolloutMetadata,
 }) {
-  if (
-    !cwd ||
-    !sessionsDir ||
-    typeof fileExistsCaseInsensitive !== "function" ||
-    typeof listRolloutFiles !== "function" ||
-    typeof readRolloutMetadata !== "function" ||
-    !fileExistsCaseInsensitive(sessionsDir)
-  ) {
+  if (!cwd || !sessionsDir || !fileExistsCaseInsensitive(sessionsDir)) {
     return null;
   }
 

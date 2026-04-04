@@ -1,8 +1,9 @@
 module.exports = function runSidecarTests(h) {
   const {
+    approval,
     assert,
-    cli,
     fs,
+    mcpServer,
     path,
     ROOT,
     section,
@@ -108,7 +109,7 @@ module.exports = function runSidecarTests(h) {
         "utf8"
       );
 
-      const candidate = cli.resolveSidecarSessionCandidate({
+      const candidate = sidecarResolver.resolveSidecarSessionCandidate({
         cwd: "D:\\XAGIT\\leyserkids",
         sessionsDir: fixtureRoot,
         startedAtMs: Date.parse(recentIso),
@@ -132,7 +133,7 @@ module.exports = function runSidecarTests(h) {
     };
 
     try {
-      cli.handleMcpServerMessage({ id: "req-1", method: "ping" }, () => {});
+      mcpServer.handleMcpServerMessage({ id: "req-1", method: "ping" }, () => {});
     } finally {
       process.stdout.write = originalWrite;
     }
@@ -298,7 +299,7 @@ module.exports = function runSidecarTests(h) {
         isWindowsTerminal: true,
       });
 
-      const terminal = cli.resolveApprovalTerminalContext({
+      const terminal = approval.resolveApprovalTerminalContext({
         sessionId: `missing-session-${Date.now()}`,
         projectDir,
         fallbackTerminal: {

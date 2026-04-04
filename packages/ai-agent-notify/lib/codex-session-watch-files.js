@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { StringDecoder } = require("string_decoder");
 
-const { parseSessionIdFromRolloutPath } = require("./codex-session-events");
+const { parseSessionIdFromRolloutPath } = require("./codex-session-event-descriptors");
 const { fileExistsCaseInsensitive, stripUtf8Bom } = require("./shared-utils");
 
 function listRolloutFiles(rootDir, log) {

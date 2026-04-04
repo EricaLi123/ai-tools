@@ -7,15 +7,49 @@ const NODE_EXECUTABLE = process.execPath;
 const TEST_PROJECT_DIR = "D:\\repo\\sample-project";
 const TEST_PACKAGE_DIR = `${TEST_PROJECT_DIR}\\packages\\ai-agent-notify`;
 
-const cli = require(path.join(ROOT, "bin", "cli.js"));
+const approvalNotify = require(path.join(ROOT, "lib", "codex-approval-notify.js"));
+const approvalPending = require(path.join(ROOT, "lib", "codex-approval-pending.js"));
+const approvalRules = require(path.join(ROOT, "lib", "codex-approval-rules.js"));
+const approvalSessionGrants = require(path.join(ROOT, "lib", "codex-approval-session-grants.js"));
+const shellCommandAnalysis = require(path.join(ROOT, "lib", "shell-command-analysis.js"));
+const sessionEventDescriptors = require(path.join(ROOT, "lib", "codex-session-event-descriptors.js"));
+const sessionRolloutEvents = require(path.join(ROOT, "lib", "codex-session-rollout-events.js"));
+const sessionTuiEvents = require(path.join(ROOT, "lib", "codex-session-tui-events.js"));
+const mcpServer = require(path.join(ROOT, "lib", "codex-mcp-server.js"));
 const sidecarResolver = require(path.join(ROOT, "lib", "codex-sidecar-resolver.js"));
-const sidecarState = require(path.join(ROOT, "lib", "codex-sidecar-state.js"));
+const sidecarMatcher = require(path.join(ROOT, "lib", "codex-sidecar-matcher.js"));
+const sidecarStore = require(path.join(ROOT, "lib", "codex-sidecar-store.js"));
 const notifyRuntime = require(path.join(ROOT, "lib", "notify-runtime.js"));
 const windowsPaths = require(path.join(ROOT, "lib", "windows-paths.js"));
-const {
-  createNotificationSpec,
-  normalizeIncomingNotification,
-} = require(path.join(ROOT, "lib", "notification-sources.js"));
+const { createNotificationSpec } = require(path.join(
+  ROOT,
+  "lib",
+  "notification-source-display.js"
+));
+const { normalizeIncomingNotification } = require(path.join(
+  ROOT,
+  "lib",
+  "notification-source-parsers.js"
+));
+
+const approval = {
+  ...approvalNotify,
+  ...approvalPending,
+  ...approvalRules,
+  ...approvalSessionGrants,
+  ...shellCommandAnalysis,
+};
+
+const events = {
+  ...sessionEventDescriptors,
+  ...sessionRolloutEvents,
+  ...sessionTuiEvents,
+};
+
+const sidecarState = {
+  ...sidecarMatcher,
+  ...sidecarStore,
+};
 
 function createHarness() {
   let passed = 0;
@@ -106,14 +140,16 @@ function createHarness() {
     NODE_EXECUTABLE,
     TEST_PACKAGE_DIR,
     TEST_PROJECT_DIR,
+    approval,
     assert,
     assertLocalMarkdownLinksExist,
     canSpawnChildren,
-    cli,
     createNotificationSpec,
+    events,
     execFileSync,
     finish,
     fs,
+    mcpServer,
     normalizeIncomingNotification,
     normalizeTestPath,
     notifyRuntime,

@@ -1,16 +1,16 @@
 module.exports = function runApprovalSuppressionTests(h) {
-  const { assert, cli, normalizeTestPath, path, ROOT, section, test } = h;
+  const { approval, assert, normalizeTestPath, path, ROOT, section, test } = h;
 
   section("Approval suppression");
 
   test("approved PowerShell command rules suppress exact require_escalated shell commands", () => {
-    const rules = cli.parseApprovedCommandRules(
+    const rules = approval.parseApprovedCommandRules(
       'prefix_rule(pattern=["C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe", "-Command", "rg -n \\"model|openrouter|provider|apiKey|baseUrl|llm\\" \\"D:\\\\XAGIT\\\\kids-tools\\\\apps\\\\ai-ui-case-runner\\""], decision="allow")'
     );
 
     assert(rules.length === 1, "expected one parsed approved rule");
     assert(
-      cli.getCodexRequireEscalatedSuppressionReason({
+      approval.getCodexRequireEscalatedSuppressionReason({
         event: {
           eventType: "require_escalated_tool_call",
           toolArgs: {
@@ -26,13 +26,13 @@ module.exports = function runApprovalSuppressionTests(h) {
   });
 
   test("approved PowerShell command rules suppress prefix_rule-based require_escalated shell commands", () => {
-    const rules = cli.parseApprovedCommandRules(
+    const rules = approval.parseApprovedCommandRules(
       'prefix_rule(pattern=["C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe", "-Command", "Get-ChildItem -Recurse -File \\"D:\\\\XAGIT\\\\kids-tools\\\\apps\\\\ai-ui-case-runner\\" | Select-Object -ExpandProperty FullName"], decision="allow")'
     );
 
     assert(rules.length === 1, "expected one parsed approved rule");
     assert(
-      cli.getCodexRequireEscalatedSuppressionReason({
+      approval.getCodexRequireEscalatedSuppressionReason({
         event: {
           eventType: "require_escalated_tool_call",
           toolArgs: {
@@ -54,13 +54,13 @@ module.exports = function runApprovalSuppressionTests(h) {
   });
 
   test("approved command rules do not suppress write require_escalated shell commands", () => {
-    const rules = cli.parseApprovedCommandRules(
+    const rules = approval.parseApprovedCommandRules(
       'prefix_rule(pattern=["C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe", "-Command", "git add -- README.md test/test-cli.js; git commit -m \\"Trim README to user-facing setup\\""], decision="allow")'
     );
 
     assert(rules.length === 1, "expected one parsed approved rule");
     assert(
-      cli.getCodexRequireEscalatedSuppressionReason({
+      approval.getCodexRequireEscalatedSuppressionReason({
         event: {
           eventType: "require_escalated_tool_call",
           toolArgs: {
@@ -79,15 +79,15 @@ module.exports = function runApprovalSuppressionTests(h) {
   test("extractCommandApprovalRoots normalizes absolute file, directory, and inline node script roots", () => {
     const packageRoot = normalizeTestPath(ROOT);
     const binDir = normalizeTestPath(path.join(ROOT, "bin"));
-    const fileRoots = cli.extractCommandApprovalRoots({
+    const fileRoots = approval.extractCommandApprovalRoots({
       command: `Get-Content -Path '${path.join(ROOT, "bin", "cli.js")}'`,
       workdir: ROOT,
     });
-    const dirRoots = cli.extractCommandApprovalRoots({
+    const dirRoots = approval.extractCommandApprovalRoots({
       command: `Get-ChildItem '${path.join(ROOT, "bin")}' -File | Select-Object -ExpandProperty FullName`,
       workdir: ROOT,
     });
-    const inlineNodeRoots = cli.extractCommandApprovalRoots({
+    const inlineNodeRoots = approval.extractCommandApprovalRoots({
       command: `@'\nconst root = '${ROOT.replace(/\\/g, "/")}';\nwriteAsciiJs(path.join(root, 'bin/cli.js'), 'x');\n'@ | node -`,
       workdir: ROOT,
     });
@@ -105,7 +105,7 @@ module.exports = function runApprovalSuppressionTests(h) {
     const nowMs = 1_000_000;
     const packageRoot = ROOT;
 
-    cli.rememberRecentRequireEscalatedEvent(
+    approval.rememberRecentRequireEscalatedEvent(
       recentRequireEscalatedEvents,
       {
         dedupeKey: "session-a|exec|turn-a|Get-Content",
@@ -121,7 +121,7 @@ module.exports = function runApprovalSuppressionTests(h) {
       nowMs - 1_000
     );
 
-    const added = cli.confirmSessionApprovalForRecentEvents({
+    const added = approval.confirmSessionApprovalForRecentEvents({
       recentRequireEscalatedEvents,
       runtime: { log: () => {} },
       sessionApprovalGrants,
@@ -133,7 +133,7 @@ module.exports = function runApprovalSuppressionTests(h) {
 
     assert(added === 1, "expected one confirmed root");
     assert(
-      cli.getSessionRequireEscalatedSuppressionReason({
+      approval.getSessionRequireEscalatedSuppressionReason({
         event: {
           eventType: "require_escalated_tool_call",
           sessionId: "session-a",
@@ -150,14 +150,14 @@ module.exports = function runApprovalSuppressionTests(h) {
   });
 
   test("read-only require_escalated commands use a longer pending grace window", () => {
-    const readOnlyGraceMs = cli.getCodexApprovalNotifyGraceMs({
+    const readOnlyGraceMs = approval.getCodexApprovalNotifyGraceMs({
       eventType: "require_escalated_tool_call",
       toolArgs: {
         command: `Get-Content -Path '${path.join(ROOT, "bin", "cli.js")}'`,
         workdir: ROOT,
       },
     });
-    const writeGraceMs = cli.getCodexApprovalNotifyGraceMs({
+    const writeGraceMs = approval.getCodexApprovalNotifyGraceMs({
       eventType: "require_escalated_tool_call",
       toolArgs: {
         command: `node "${path.join(ROOT, "bin", "cli.js")}" --help`,
@@ -203,7 +203,7 @@ module.exports = function runApprovalSuppressionTests(h) {
     pendingApprovalCallIds.set("call-b", "approval-b");
     pendingApprovalCallIds.set("call-other", "approval-other");
 
-    const batch = cli.drainPendingApprovalBatch({
+    const batch = approval.drainPendingApprovalBatch({
       pendingApprovalNotifications,
       pendingApprovalCallIds,
       representativeKey: "approval-a",
@@ -245,7 +245,7 @@ module.exports = function runApprovalSuppressionTests(h) {
     pendingApprovalCallIds.set("call-a", "approval-a");
     pendingApprovalCallIds.set("call-late", "approval-late");
 
-    const batch = cli.drainPendingApprovalBatch({
+    const batch = approval.drainPendingApprovalBatch({
       pendingApprovalNotifications,
       pendingApprovalCallIds,
       representativeKey: "approval-a",
@@ -267,7 +267,7 @@ module.exports = function runApprovalSuppressionTests(h) {
     const nowMs = 3_000_000;
     const packageRoot = ROOT;
 
-    cli.rememberRecentRequireEscalatedEvent(
+    approval.rememberRecentRequireEscalatedEvent(
       recentRequireEscalatedEvents,
       {
         dedupeKey: "session-c|exec|turn-c|Get-Content",
@@ -307,7 +307,7 @@ module.exports = function runApprovalSuppressionTests(h) {
     });
     pendingApprovalCallIds.set("call-write", "pending-write");
 
-    cli.confirmSessionApprovalForRecentEvents({
+    approval.confirmSessionApprovalForRecentEvents({
       recentRequireEscalatedEvents,
       runtime: { log: () => {} },
       sessionApprovalGrants,
@@ -317,7 +317,7 @@ module.exports = function runApprovalSuppressionTests(h) {
       nowMs,
     });
 
-    const cancelled = cli.cancelPendingApprovalNotificationsBySuppression({
+    const cancelled = approval.cancelPendingApprovalNotificationsBySuppression({
       runtime: { log: () => {} },
       pendingApprovalNotifications,
       pendingApprovalCallIds,
@@ -340,7 +340,7 @@ module.exports = function runApprovalSuppressionTests(h) {
     const packageRoot = ROOT;
     const otherRoot = "C:\\other-project";
 
-    cli.rememberRecentRequireEscalatedEvent(
+    approval.rememberRecentRequireEscalatedEvent(
       recentRequireEscalatedEvents,
       {
         dedupeKey: "session-b|exec|turn-b|Get-Content",
@@ -356,7 +356,7 @@ module.exports = function runApprovalSuppressionTests(h) {
       nowMs - 1_000
     );
 
-    cli.confirmSessionApprovalForRecentEvents({
+    approval.confirmSessionApprovalForRecentEvents({
       recentRequireEscalatedEvents,
       runtime: { log: () => {} },
       sessionApprovalGrants,
@@ -367,7 +367,7 @@ module.exports = function runApprovalSuppressionTests(h) {
     });
 
     assert(
-      cli.getSessionRequireEscalatedSuppressionReason({
+      approval.getSessionRequireEscalatedSuppressionReason({
         event: {
           eventType: "require_escalated_tool_call",
           sessionId: "session-b",
@@ -382,7 +382,7 @@ module.exports = function runApprovalSuppressionTests(h) {
     );
 
     assert(
-      cli.getSessionRequireEscalatedSuppressionReason({
+      approval.getSessionRequireEscalatedSuppressionReason({
         event: {
           eventType: "require_escalated_tool_call",
           sessionId: "session-b",
@@ -399,7 +399,7 @@ module.exports = function runApprovalSuppressionTests(h) {
 
   test("approval_policy=never suppresses require_escalated approval notifications", () => {
     assert(
-      cli.getCodexRequireEscalatedSuppressionReason({
+      approval.getCodexRequireEscalatedSuppressionReason({
         event: {
           eventType: "require_escalated_tool_call",
           toolArgs: {
@@ -415,7 +415,7 @@ module.exports = function runApprovalSuppressionTests(h) {
 
   test("danger-full-access suppresses require_escalated approval notifications", () => {
     assert(
-      cli.getCodexRequireEscalatedSuppressionReason({
+      approval.getCodexRequireEscalatedSuppressionReason({
         event: {
           eventType: "require_escalated_tool_call",
           toolArgs: {

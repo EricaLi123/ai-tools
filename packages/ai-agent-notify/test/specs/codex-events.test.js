@@ -1,10 +1,10 @@
 module.exports = function runCodexEventTests(h) {
-  const { assert, cli, section, test, TEST_PACKAGE_DIR } = h;
+  const { assert, events, section, test, TEST_PACKAGE_DIR } = h;
 
   section("Codex events");
 
   test("session watcher queues response_item function_call approvals for pending confirmation", () => {
-    const event = cli.buildCodexSessionEvent(
+    const event = events.buildCodexSessionEvent(
       {
         filePath:
           "C:\\Users\\ericali\\.codex\\sessions\\2026\\03\\20\\rollout-2026-03-20T12-14-50-session-1.jsonl",
@@ -36,7 +36,7 @@ module.exports = function runCodexEventTests(h) {
   });
 
   test("session watcher ignores non-escalated function_call response items", () => {
-    const event = cli.buildCodexSessionEvent(
+    const event = events.buildCodexSessionEvent(
       {
         filePath:
           "C:\\Users\\ericali\\.codex\\sessions\\2026\\03\\20\\rollout-2026-03-20T12-14-50-session-2.jsonl",
@@ -62,7 +62,7 @@ module.exports = function runCodexEventTests(h) {
   });
 
   test("tui watcher recognizes shell approvals from ToolCall lines instead of exec_approval dispatch", () => {
-    const event = cli.buildCodexTuiApprovalEvent(
+    const event = events.buildCodexTuiApprovalEvent(
       { applyPatchCapture: null },
       '2026-03-20T04:15:29.835774Z  INFO session_loop{thread_id=session-3}:submission_dispatch{otel.name="op.dispatch.user_turn" submission.id="submission-3" codex.op="user_turn"}:turn{otel.name="session_task.turn" thread.id=session-3 turn.id=turn-3 model=gpt-5.4}: codex_core::stream_events_utils: ToolCall: shell_command {"command":"Get-Date","sandbox_permissions":"require_escalated","workdir":"C:\\\\Users\\\\ericali"} thread_id=session-3',
       {
@@ -78,7 +78,7 @@ module.exports = function runCodexEventTests(h) {
   });
 
   test("session watcher recognizes explicit apply_patch approval events from rollout JSONL", () => {
-    const event = cli.buildCodexSessionEvent(
+    const event = events.buildCodexSessionEvent(
       {
         filePath:
           "C:\\Users\\ericali\\.codex\\sessions\\2026\\03\\20\\rollout-2026-03-20T12-14-50-session-4.jsonl",
@@ -105,7 +105,7 @@ module.exports = function runCodexEventTests(h) {
 
   test("session watcher recognizes request_user_input prompts from rollout JSONL", () => {
     const promptText = "What plan should I use for the next step?";
-    const event = cli.buildCodexSessionEvent(
+    const event = events.buildCodexSessionEvent(
       {
         filePath:
           "C:\\Users\\ericali\\.codex\\sessions\\2026\\04\\03\\rollout-2026-04-03T16-04-13-session-input.jsonl",
@@ -141,7 +141,7 @@ module.exports = function runCodexEventTests(h) {
   });
 
   test("tui watcher ignores apply_patch tool calls because they are not reliable approval signals", () => {
-    const event = cli.buildCodexTuiApprovalEvent(
+    const event = events.buildCodexTuiApprovalEvent(
       {},
       '2026-03-20T09:24:55.432022Z  INFO session_loop{thread_id=session-5}:submission_dispatch{otel.name="op.dispatch.user_turn" submission.id="submission-5" codex.op="user_turn"}:turn{otel.name="session_task.turn" thread.id=session-5 turn.id=turn-5 model=gpt-5.4}: codex_core::stream_events_utils: ToolCall: apply_patch *** Begin Patch',
       {
@@ -154,7 +154,7 @@ module.exports = function runCodexEventTests(h) {
 
   test("tui watcher recognizes request_user_input prompts", () => {
     const promptText = "What plan should I use for the next step?";
-    const event = cli.buildCodexTuiInputEvent(
+    const event = events.buildCodexTuiInputEvent(
       {},
       `2026-04-03T08:04:51.916797Z  INFO session_loop{thread_id=session-input}:submission_dispatch{otel.name="op.dispatch.user_input" submission.id="submission-input" codex.op="user_input"}:turn{otel.name="session_task.turn" thread.id=session-input turn.id=turn-input model=gpt-5.4}: codex_core::stream_events_utils: ToolCall: request_user_input {"questions":[{"header":"Plan Type","id":"plan_target","question":"${promptText}","options":[{"label":"Project Plan (Recommended)","description":"Inspect D:\\\\tmp\\\\ai-ui-case-runner-work before finalizing the plan."}]}]} thread_id=session-input`,
       {

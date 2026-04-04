@@ -1,7 +1,7 @@
 const {
   findSidecarTerminalContextForProjectDir,
   findSidecarTerminalContextForSession,
-} = require("./codex-sidecar-state");
+} = require("./codex-sidecar-matcher");
 const { emitNotification } = require("./notify-runtime");
 
 function emitCodexApprovalNotification({ event, runtime, terminal, emittedEventKeys, origin }) {

@@ -5,27 +5,24 @@ module.exports = function runStructureAndRuntimeTests(h) {
 
   [
     "bin/cli.js",
-    "lib/codex-approval.js",
     "lib/codex-approval-notify.js",
-    "lib/codex-approval-rules.js",
     "lib/codex-approval-pending.js",
+    "lib/codex-approval-rules.js",
     "lib/codex-approval-session-grants.js",
-    "lib/codex-approval-state.js",
+    "lib/codex-mcp-sidecar-mode.js",
+    "lib/codex-mcp-server.js",
     "lib/codex-sidecar-matcher.js",
     "lib/codex-sidecar-resolver.js",
     "lib/codex-sidecar-store.js",
-    "lib/codex-sidecar-state.js",
     "lib/codex-session-event-descriptors.js",
-    "lib/codex-session-events.js",
     "lib/codex-session-rollout-events.js",
     "lib/codex-session-tui-events.js",
-    "lib/codex-session-watch.js",
     "lib/codex-session-watch-files.js",
     "lib/codex-session-watch-handlers.js",
+    "lib/codex-session-watch-runner.js",
     "lib/codex-session-watch-streams.js",
     "lib/notification-source-display.js",
     "lib/notification-source-parsers.js",
-    "lib/notification-sources.js",
     "lib/notify-terminal-context.js",
     "lib/notify-runtime.js",
     "lib/shell-command-analysis.js",
@@ -52,6 +49,19 @@ module.exports = function runStructureAndRuntimeTests(h) {
     });
   });
 
+  [
+    "lib/codex-approval.js",
+    "lib/codex-approval-state.js",
+    "lib/codex-session-events.js",
+    "lib/codex-session-watch.js",
+    "lib/notification-sources.js",
+    "lib/codex-sidecar-state.js",
+  ].forEach((relPath) => {
+    test(`${relPath} removed`, () => {
+      assert(!fs.existsSync(path.join(ROOT, relPath)), `${relPath} should be removed`);
+    });
+  });
+
   section("package.json");
 
   const pkg = JSON.parse(read("package.json"));
@@ -70,103 +80,99 @@ module.exports = function runStructureAndRuntimeTests(h) {
   section("Content checks");
 
   const cliContent = read("bin/cli.js");
-  const approvalContent = read("lib/codex-approval.js");
   const approvalNotifyContent = read("lib/codex-approval-notify.js");
   const approvalPendingContent = read("lib/codex-approval-pending.js");
   const approvalRulesContent = read("lib/codex-approval-rules.js");
   const approvalSessionGrantsContent = read("lib/codex-approval-session-grants.js");
-  const approvalStateContent = read("lib/codex-approval-state.js");
+  const mcpSidecarModeContent = read("lib/codex-mcp-sidecar-mode.js");
+  const mcpServerContent = read("lib/codex-mcp-server.js");
   const notifyTerminalContextContent = read("lib/notify-terminal-context.js");
   const notifyRuntimeContent = read("lib/notify-runtime.js");
   const sidecarMatcherContent = read("lib/codex-sidecar-matcher.js");
   const sidecarResolverContent = read("lib/codex-sidecar-resolver.js");
   const sidecarStoreContent = read("lib/codex-sidecar-store.js");
-  const sidecarStateContent = read("lib/codex-sidecar-state.js");
   const sessionEventDescriptorsContent = read("lib/codex-session-event-descriptors.js");
-  const sessionEventContent = read("lib/codex-session-events.js");
   const sessionRolloutEventsContent = read("lib/codex-session-rollout-events.js");
   const sessionTuiEventsContent = read("lib/codex-session-tui-events.js");
-  const sessionWatchContent = read("lib/codex-session-watch.js");
   const sessionWatchFilesContent = read("lib/codex-session-watch-files.js");
   const sessionWatchHandlersContent = read("lib/codex-session-watch-handlers.js");
+  const sessionWatchRunnerContent = read("lib/codex-session-watch-runner.js");
   const sessionWatchStreamsContent = read("lib/codex-session-watch-streams.js");
   const notificationSourceDisplayContent = read("lib/notification-source-display.js");
   const notificationSourceParsersContent = read("lib/notification-source-parsers.js");
-  const notificationSourcesContent = read("lib/notification-sources.js");
   const shellCommandAnalysisContent = read("lib/shell-command-analysis.js");
   const sharedUtilsContent = read("lib/shared-utils.js");
   const notifyContent = read("scripts/notify.ps1");
   const startHiddenContent = read("scripts/start-hidden.vbs");
   const watcherContent = read("scripts/tab-color-watcher.ps1");
 
-  test("cli.js delegates runtime and codex logic into lib modules", () => {
+  test("cli.js is now a thin mode dispatcher with no test export surface", () => {
     assert(cliContent.includes("../lib/notify-runtime"));
-    assert(cliContent.includes("../lib/codex-sidecar-resolver"));
-    assert(cliContent.includes("../lib/codex-approval"));
-    assert(cliContent.includes("../lib/codex-session-events"));
-    assert(cliContent.includes("../lib/codex-session-watch"));
-    assert(cliContent.includes("../lib/shared-utils"));
-    assert(!cliContent.includes("function emitNotification("));
-    assert(!cliContent.includes("function createRuntime("));
-    assert(!cliContent.includes("function startTabColorWatcher("));
-    assert(!cliContent.includes("function buildCodexSessionEvent("));
-    assert(!cliContent.includes("function getCodexRequireEscalatedSuppressionReason("));
-    assert(!cliContent.includes("function listRolloutFiles("));
+    assert(cliContent.includes("../lib/codex-session-watch-runner"));
+    assert(cliContent.includes("../lib/codex-mcp-sidecar-mode"));
+    assert(cliContent.includes("../lib/notification-source-parsers"));
+    assert(!cliContent.includes('require("../lib/codex-approval")'));
+    assert(!cliContent.includes('require("../lib/codex-session-events")'));
+    assert(!cliContent.includes('require("../lib/codex-session-watch")'));
+    assert(!cliContent.includes('require("../lib/notification-sources")'));
+    assert(!cliContent.includes("module.exports = {"));
+    assert(!cliContent.includes("function handleMcpServerMessage("));
+    assert(!cliContent.includes("function resolveSidecarSessionCandidate("));
+    assert(!cliContent.includes("function ensureCodexSessionWatchRunning("));
+    assert(!cliContent.includes("function acquireSingleInstanceLock("));
   });
 
   test("notify-runtime.js resolves hwnd, shell pid, and spawns watcher through launcher", () => {
     assert(notifyRuntimeContent.includes('require("./notify-terminal-context")'));
     assert(!notifyRuntimeContent.includes("function detectTerminalContext("));
     assert(notifyRuntimeContent.includes("start-tab-color-watcher.ps1"));
-    assert(notifyRuntimeContent.includes("--shell-pid"));
+    assert(notifyRuntimeContent.includes("-TargetPid"));
     assert(notifyRuntimeContent.includes("launcher exited status="));
     assert(notifyRuntimeContent.includes("WatcherPidFile"));
     assert(notifyTerminalContextContent.includes("function detectTerminalContext("));
     assert(notifyTerminalContextContent.includes("function findParentInfo("));
+    assert(notifyTerminalContextContent.includes("--shell-pid"));
     assert(notifyTerminalContextContent.includes("find-hwnd.ps1"));
     assert(notifyTerminalContextContent.includes("get-shell-pid.ps1"));
   });
 
-  test("cli.js routes codex session watcher mode while watch modules own the details", () => {
+  test("session watcher responsibilities are split across dedicated modules", () => {
     assert(cliContent.includes("codex-session-watch"));
-    assert(cliContent.includes("codex-tui.log"));
-    assert(!cliContent.includes("apply_patch_outside_workspace"));
-    assert(!cliContent.includes("codex-watch"));
-    assert(!cliContent.includes("waitingOnApproval"));
-    assert(cliContent.includes("sessionsDir"));
-    assert(cliContent.includes('acquireSingleInstanceLock("codex-session-watch"'));
-    assert(cliContent.includes("start-hidden.vbs"));
-
-    assert(sessionEventContent.includes('require("./codex-session-event-descriptors")'));
-    assert(sessionEventContent.includes('require("./codex-session-rollout-events")'));
-    assert(sessionEventContent.includes('require("./codex-session-tui-events")'));
-    assert(!sessionEventContent.includes("function buildCodexSessionEvent("));
-    assert(sessionEventDescriptorsContent.includes("function getCodexInputRequestDescriptor("));
-    assert(sessionRolloutEventsContent.includes("exec_approval_request"));
-    assert(sessionRolloutEventsContent.includes("request_permissions"));
-    assert(sessionRolloutEventsContent.includes("request_user_input"));
-    assert(sessionRolloutEventsContent.includes("apply_patch_approval_request"));
-    assert(sessionTuiEventsContent.includes("ToolCall: "));
-    assert(sessionTuiEventsContent.includes('"sandbox_permissions":"require_escalated"'));
-    assert(sessionWatchContent.includes('require("./codex-session-watch-files")'));
-    assert(sessionWatchContent.includes('require("./codex-session-watch-streams")'));
-    assert(!sessionWatchContent.includes("function consumeSessionFileUpdates("));
+    assert(sessionWatchRunnerContent.includes("codex-tui.log"));
+    assert(sessionWatchRunnerContent.includes('acquireSingleInstanceLock("codex-session-watch"'));
+    assert(sessionWatchRunnerContent.includes("function runCodexSessionWatchMode("));
+    assert(sessionWatchRunnerContent.includes("function ensureCodexSessionWatchRunning("));
     assert(sessionWatchFilesContent.includes("function listRolloutFiles("));
-    assert(sessionWatchHandlersContent.includes("function handleSessionRecord("));
-    assert(sessionWatchHandlersContent.includes("function handleCodexTuiLogLine("));
+    assert(sessionWatchFilesContent.includes('require("./codex-session-event-descriptors")'));
+    assert(sessionWatchHandlersContent.includes('require("./codex-approval-pending")'));
+    assert(sessionWatchHandlersContent.includes('require("./codex-approval-notify")'));
+    assert(sessionWatchHandlersContent.includes('require("./codex-approval-rules")'));
+    assert(sessionWatchHandlersContent.includes('require("./codex-approval-session-grants")'));
+    assert(sessionWatchHandlersContent.includes('require("./codex-session-rollout-events")'));
+    assert(sessionWatchHandlersContent.includes('require("./codex-session-tui-events")'));
+    assert(sessionWatchHandlersContent.includes('require("./codex-session-event-descriptors")'));
+    assert(sessionWatchStreamsContent.includes('require("./codex-session-watch-files")'));
+    assert(sessionWatchStreamsContent.includes('require("./codex-session-watch-handlers")'));
     assert(sessionWatchStreamsContent.includes("function consumeSessionFileUpdates("));
-    assert(sessionWatchStreamsContent.includes("tracking tui log file="));
+    assert(sessionRolloutEventsContent.includes("function buildCodexSessionEvent("));
+    assert(sessionRolloutEventsContent.includes("request_user_input"));
+    assert(sessionTuiEventsContent.includes("function buildCodexTuiApprovalEvent("));
+    assert(sessionTuiEventsContent.includes("function buildCodexTuiInputEvent("));
+    assert(sessionEventDescriptorsContent.includes("function buildApprovalDedupeKey("));
   });
 
-  test("cli.js includes codex mcp sidecar mode", () => {
+  test("mcp sidecar protocol handling lives in its own module", () => {
     assert(cliContent.includes("codex-mcp-sidecar"));
     assert(cliContent.includes("Run a minimal MCP sidecar"));
-    assert(cliContent.includes("ensureCodexSessionWatchRunning"));
-    assert(cliContent.includes("codex-session-watch already running"));
-    assert(cliContent.includes('case "initialize"'));
-    assert(cliContent.includes('case "tools/list"'));
-    assert(cliContent.includes('case "resources/list"'));
-    assert(cliContent.includes('case "prompts/list"'));
+    assert(mcpSidecarModeContent.includes('require("./codex-session-watch-runner")'));
+    assert(mcpSidecarModeContent.includes("function runCodexMcpSidecarMode("));
+    assert(mcpSidecarModeContent.includes("ensureCodexSessionWatchRunning"));
+    assert(mcpServerContent.includes('case "initialize"'));
+    assert(mcpServerContent.includes('case "ping"'));
+    assert(mcpServerContent.includes('case "tools/list"'));
+    assert(mcpServerContent.includes('case "resources/list"'));
+    assert(mcpServerContent.includes('case "resources/templates/list"'));
+    assert(mcpServerContent.includes('case "prompts/list"'));
   });
 
   test("notify-runtime.js prefixes runtime log files with the package name", () => {
@@ -175,14 +181,15 @@ module.exports = function runStructureAndRuntimeTests(h) {
     assert(notifyRuntimeContent.includes('`${LOG_FILE_PREFIX}-${normalizedLogId}.log`'));
   });
 
-  test("sidecar modules share Windows path helpers", () => {
-    assert(sidecarStateContent.includes('require("./codex-sidecar-matcher")'));
-    assert(sidecarStateContent.includes('require("./codex-sidecar-store")'));
-    assert(!sidecarStateContent.includes("function findSidecarTerminalContextForSession("));
+  test("sidecar matching and persistence are split by responsibility", () => {
     assert(sidecarMatcherContent.includes('require("./windows-paths")'));
-    assert(!sidecarStateContent.includes("function normalizeWindowsPath("));
-    assert(sidecarResolverContent.includes('require("./windows-paths")'));
+    assert(sidecarMatcherContent.includes('require("./codex-sidecar-store")'));
+    assert(sidecarMatcherContent.includes("function findSidecarTerminalContextForSession("));
+    assert(sidecarResolverContent.includes('require("./codex-session-watch-files")'));
+    assert(sidecarResolverContent.includes('require("./shared-utils")'));
+    assert(sidecarResolverContent.includes("function resolveSidecarSessionCandidate("));
     assert(sidecarStoreContent.includes("function writeSidecarRecord("));
+    assert(sidecarStoreContent.includes("function pruneStaleSidecarRecords("));
   });
 
   test("shared utils centralize argv/env and integer parsing helpers", () => {
@@ -191,33 +198,24 @@ module.exports = function runStructureAndRuntimeTests(h) {
     assert(sharedUtilsContent.includes("function parsePositiveInteger("));
     assert(!notifyRuntimeContent.includes("function getArgValue("));
     assert(!notifyRuntimeContent.includes("function getEnvFirst("));
-    assert(!sidecarStateContent.includes("function parsePositiveInteger("));
+    assert(!sidecarResolverContent.includes("function parsePositiveInteger("));
   });
 
-  test("approval logic lives outside cli.js", () => {
-    assert(approvalContent.includes('require("./codex-approval-notify")'));
-    assert(approvalContent.includes('require("./codex-approval-rules")'));
-    assert(approvalContent.includes('require("./codex-approval-state")'));
-    assert(approvalContent.includes('require("./shell-command-analysis")'));
-    assert(!approvalContent.includes("function getCodexRequireEscalatedSuppressionReason("));
-    assert(!approvalContent.includes("function extractCommandApprovalRoots("));
-    assert(!approvalContent.includes("function confirmSessionApprovalForRecentEvents("));
-    assert(!approvalContent.includes("function emitCodexApprovalNotification("));
-    assert(approvalRulesContent.includes("function getCodexRequireEscalatedSuppressionReason("));
-    assert(approvalStateContent.includes('require("./codex-approval-pending")'));
-    assert(approvalStateContent.includes('require("./codex-approval-session-grants")'));
-    assert(!approvalStateContent.includes("function confirmSessionApprovalForRecentEvents("));
+  test("approval logic is split across focused modules", () => {
+    assert(approvalNotifyContent.includes('require("./codex-sidecar-matcher")'));
+    assert(approvalNotifyContent.includes("function resolveApprovalTerminalContext("));
     assert(approvalPendingContent.includes("function flushPendingApprovalNotifications("));
+    assert(approvalPendingContent.includes("function buildPendingApprovalBatchKey("));
+    assert(approvalRulesContent.includes("function parseApprovedCommandRules("));
+    assert(approvalRulesContent.includes("function getCodexRequireEscalatedSuppressionReason("));
+    assert(approvalSessionGrantsContent.includes("function rememberRecentRequireEscalatedEvent("));
     assert(approvalSessionGrantsContent.includes("function confirmSessionApprovalForRecentEvents("));
-    assert(approvalNotifyContent.includes("function emitCodexApprovalNotification("));
     assert(shellCommandAnalysisContent.includes("function extractCommandApprovalRoots("));
+    assert(shellCommandAnalysisContent.includes("function isLikelyReadOnlyShellCommand("));
   });
 
   test("notification source normalization is split into parser and display modules", () => {
-    assert(notificationSourcesContent.includes('require("./notification-source-display")'));
-    assert(notificationSourcesContent.includes('require("./notification-source-parsers")'));
-    assert(!notificationSourcesContent.includes("function normalizeIncomingNotification("));
-    assert(!notificationSourcesContent.includes("function createNotificationSpec("));
+    assert(notificationSourceParsersContent.includes('require("./notification-source-display")'));
     assert(notificationSourceParsersContent.includes("function normalizeIncomingNotification("));
     assert(notificationSourceParsersContent.includes("function getIncomingPayloadCandidates("));
     assert(notificationSourceDisplayContent.includes("function createNotificationSpec("));

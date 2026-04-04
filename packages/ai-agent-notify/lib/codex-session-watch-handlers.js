@@ -1,22 +1,28 @@
 const {
   cancelPendingApprovalNotification,
   cancelPendingApprovalNotificationsBySuppression,
-  confirmSessionApprovalForRecentEvents,
-  emitCodexApprovalNotification,
+  queuePendingApprovalNotification,
+} = require("./codex-approval-pending");
+const { emitCodexApprovalNotification } = require("./codex-approval-notify");
+const {
   getApprovedCommandRules,
   getCodexRequireEscalatedSuppressionReason,
+} = require("./codex-approval-rules");
+const {
+  confirmSessionApprovalForRecentEvents,
   getSessionRequireEscalatedSuppressionReason,
-  queuePendingApprovalNotification,
   rememberRecentRequireEscalatedEvent,
-} = require("./codex-approval");
+} = require("./codex-approval-session-grants");
 const {
   buildCodexSessionEvent,
+  isApprovedCommandRuleSavedRecord,
+} = require("./codex-session-rollout-events");
+const {
   buildCodexTuiApprovalEvent,
   buildCodexTuiInputEvent,
-  isApprovedCommandRuleSavedRecord,
   parseCodexTuiApprovalConfirmation,
-  parseSessionIdFromRolloutPath,
-} = require("./codex-session-events");
+} = require("./codex-session-tui-events");
+const { parseSessionIdFromRolloutPath } = require("./codex-session-event-descriptors");
 const { stripUtf8Bom } = require("./shared-utils");
 
 function handleSessionRecord(

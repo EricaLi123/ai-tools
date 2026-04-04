@@ -1,4 +1,4 @@
-const { createNotificationSpec } = require("./notification-sources");
+const { createNotificationSpec } = require("./notification-source-display");
 const {
   buildApprovalDedupeKey,
   getCodexExecApprovalDescriptor,
