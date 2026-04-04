@@ -83,7 +83,7 @@ Approval:
          ├─ watcher 得到 sessionId / approvalKind / turnId 等语义线索
          ├─ watcher 按 sessionId 查询 sidecar state
          │    ├─ 命中: 复用保存下来的 hwnd / shellPid 做定位增强
-         │    └─ 未命中: 退回 neutral Toast-only
+         │    └─ 未命中: 先尝试 `projectDir` / `cwd` 窗口级回退；再不行才退回 neutral Toast-only
          └─ notify.ps1 发 toast / flash / open
 ```
 

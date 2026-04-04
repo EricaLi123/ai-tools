@@ -61,11 +61,17 @@ function shouldEmitEventKey(emittedEventKeys, eventKey) {
 function resolveApprovalTerminalContext({ sessionId, projectDir, fallbackTerminal, log }) {
   const terminal = findSidecarTerminalContextForSession(sessionId, log);
   if (!terminal || (!terminal.hwnd && !terminal.shellPid)) {
+    if (typeof log === "function") {
+      log(
+        `approval terminal exact sidecar match missed sessionId=${sessionId || "unknown"} projectDir=${projectDir || ""}`
+      );
+    }
+
     const projectFallback = findSidecarTerminalContextForProjectDir(projectDir, log);
     if (!projectFallback || !projectFallback.hwnd) {
       if (typeof log === "function") {
         log(
-          `approval terminal fallback used sessionId=${sessionId || "unknown"} projectDir=${projectDir || ""} reason=no_sidecar_match`
+          `approval terminal resolved via default fallback sessionId=${sessionId || "unknown"} projectDir=${projectDir || ""} reason=no_sidecar_match`
         );
       }
       return fallbackTerminal;
@@ -73,11 +79,12 @@ function resolveApprovalTerminalContext({ sessionId, projectDir, fallbackTermina
 
     if (typeof log === "function") {
       log(
-        `approval terminal project fallback used sessionId=${sessionId || "unknown"} projectDir=${projectDir || ""} hwnd=${projectFallback.hwnd || ""}`
+        `approval terminal resolved via project-dir fallback sessionId=${sessionId || "unknown"} projectDir=${projectDir || ""} hwnd=${projectFallback.hwnd || ""}`
       );
     }
 
     return {
+      // Weak cwd fallback only reuses the window handle; reusing shellPid can target the wrong tab.
       hwnd: projectFallback.hwnd,
       shellPid: null,
       isWindowsTerminal: false,
@@ -86,7 +93,7 @@ function resolveApprovalTerminalContext({ sessionId, projectDir, fallbackTermina
 
   if (typeof log === "function") {
     log(
-      `sidecar terminal matched sessionId=${sessionId} shellPid=${terminal.shellPid || ""} hwnd=${terminal.hwnd || ""}`
+      `approval terminal resolved via exact sidecar match sessionId=${sessionId || "unknown"} shellPid=${terminal.shellPid || ""} hwnd=${terminal.hwnd || ""}`
     );
   }
 

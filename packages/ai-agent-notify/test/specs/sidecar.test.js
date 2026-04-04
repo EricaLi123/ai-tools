@@ -318,6 +318,7 @@ module.exports = function runSidecarTests(h) {
     const recordId = `test-sidecar-project-${process.pid}-${Date.now()}`;
     const projectDir = path.join(ROOT, `.tmp-sidecar-project-${Date.now()}`);
     const recordCwd = path.join(projectDir, "subdir");
+    const logs = [];
 
     try {
       sidecarState.writeSidecarRecord({
@@ -341,13 +342,28 @@ module.exports = function runSidecarTests(h) {
           shellPid: null,
           isWindowsTerminal: false,
         },
-        log: () => {},
+        log: (message) => logs.push(message),
       });
 
       assert(terminal);
       assert(terminal.hwnd === 2468);
       assert(terminal.shellPid === null);
       assert(terminal.isWindowsTerminal === false);
+      assert(
+        logs.some((message) =>
+          message.includes("approval terminal exact sidecar match missed")
+        )
+      );
+      assert(
+        logs.some((message) =>
+          message.includes("sidecar project-dir fallback matched")
+        )
+      );
+      assert(
+        logs.some((message) =>
+          message.includes("approval terminal resolved via project-dir fallback")
+        )
+      );
     } finally {
       sidecarState.deleteSidecarRecord(recordId);
     }

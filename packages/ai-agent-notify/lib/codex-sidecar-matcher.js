@@ -62,6 +62,9 @@ function findSidecarTerminalContextForProjectDir(projectDir, log) {
     .sort(compareProjectDirFallbackCandidates);
 
   if (matches.length === 0) {
+    if (typeof log === "function") {
+      log(`sidecar project-dir fallback missed projectDir=${projectDir} reason=no_candidate`);
+    }
     return null;
   }
 
@@ -73,12 +76,17 @@ function findSidecarTerminalContextForProjectDir(projectDir, log) {
     best.match.distance === second.match.distance &&
     best.match.commonSegments === second.match.commonSegments
   ) {
+    if (typeof log === "function") {
+      log(
+        `sidecar project-dir fallback skipped projectDir=${projectDir} reason=ambiguous_candidates firstCwd=${best.record.cwd || ""} secondCwd=${second.record.cwd || ""}`
+      );
+    }
     return null;
   }
 
   if (typeof log === "function") {
     log(
-      `sidecar cwd fallback matched projectDir=${projectDir} recordCwd=${best.record.cwd || ""} hwnd=${best.record.hwnd || ""} pid=${best.record.pid || ""}`
+      `sidecar project-dir fallback matched projectDir=${projectDir} recordCwd=${best.record.cwd || ""} hwnd=${best.record.hwnd || ""} pid=${best.record.pid || ""} recordId=${best.record.recordId || ""}`
     );
   }
 

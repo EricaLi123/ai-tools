@@ -179,9 +179,13 @@ module.exports = function runNotificationAndDocsTests(h) {
     assert(architectureContent.includes("normalizeIncomingNotification()"));
     assert(architectureContent.includes("codex-session-watch"));
     assert(architectureContent.includes("codex-mcp-sidecar"));
+    assert(architectureContent.includes("先尝试 `projectDir` / `cwd` 窗口级回退"));
     assert(architectureContent.includes("tui.notification_method"));
     assert(approvalContent.includes("codex-session-watch"));
     assert(approvalContent.includes("codex-mcp-sidecar"));
+    assert(approvalContent.includes("按 `projectDir` / `cwd` 的祖先后代关系寻找最可能的窗口"));
+    assert(approvalContent.includes("这个回退故意只回退 `hwnd`"));
+    assert(!approvalContent.includes("没有精确映射就放弃定位增强，只保留通知"));
     assert(approvalContent.includes("default.rules"));
     assert(windowsRuntimeContent.includes("ai-agent-notify.cmd"));
     assert(windowsRuntimeContent.includes("FRAME_BACKGROUND"));
