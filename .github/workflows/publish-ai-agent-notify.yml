@@ -176,7 +176,7 @@ jobs:
           fi
 
       - name: Compute target version
-        id: version
+        id: release
         env:
           PUBLISHED_VERSION: ${{ steps.registry.outputs.published_version }}
           PACKAGE_VERSION: ${{ steps.package.outputs.package_version }}
@@ -216,64 +216,85 @@ jobs:
             throw new Error("Unable to parse package.json version.");
           }
 
-          let nextVersion = formatVersion(packageVersion);
-          let needsBump = false;
+          let shouldPublish = true;
+          let failPipeline = false;
+          let decisionReason = "package_version_ahead_of_registry";
 
           if (published) {
             const comparison = compareVersions(packageVersion, published);
-            if (comparison <= 0) {
-              nextVersion = `${published.major}.${published.minor}.${published.patch + 1}`;
-              needsBump = nextVersion !== process.env.PACKAGE_VERSION;
+            if (comparison === 0) {
+              shouldPublish = false;
+              decisionReason = "package_version_already_published";
+            } else if (comparison < 0) {
+              shouldPublish = false;
+              failPipeline = true;
+              decisionReason = "package_version_behind_registry";
             }
           }
 
           fs.appendFileSync(
             process.env.GITHUB_OUTPUT,
-            `next_version=${nextVersion}\nneeds_bump=${needsBump ? "true" : "false"}\n`
+            [
+              `target_version=${formatVersion(packageVersion)}`,
+              `should_publish=${shouldPublish ? "true" : "false"}`,
+              `fail_pipeline=${failPipeline ? "true" : "false"}`,
+              `decision_reason=${decisionReason}`,
+            ].join("\n") + "\n"
           );
           NODE
 
-      - name: Bump package version
-        if: steps.version.outputs.needs_bump == 'true'
-        env:
-          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
-        run: npm version "$NEXT_VERSION" --no-git-tag-version
-
-      - name: Commit version sync to main
-        if: steps.version.outputs.needs_bump == 'true'
-        env:
-          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+      - name: Print release decision
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
-          if git diff --cached --quiet; then
-            echo "No package version changes to commit."
-            exit 0
-          fi
-          git commit -m "chore(release): ai-agent-notify v${NEXT_VERSION} [skip publish]"
-          git push origin HEAD:main
+          echo "target_version=${{ steps.release.outputs.target_version }}"
+          echo "published_version=${{ steps.registry.outputs.published_version }}"
+          echo "should_publish=${{ steps.release.outputs.should_publish }}"
+          echo "fail_pipeline=${{ steps.release.outputs.fail_pipeline }}"
+          echo "decision_reason=${{ steps.release.outputs.decision_reason }}"
 
-      - name: Ensure release tag exists
+      - name: Fail when repository version is behind npm
+        if: steps.release.outputs.fail_pipeline == 'true'
+        run: |
+          echo "package.json version ${{ steps.package.outputs.package_version }} is behind npm version ${{ steps.registry.outputs.published_version }}."
+          exit 1
+
+      - name: Ensure publish run still matches latest main
+        if: steps.release.outputs.should_publish == 'true'
+        run: |
+          git fetch origin main --tags
+          if [ "$(git rev-parse origin/main)" != "${GITHUB_SHA}" ]; then
+            echo "Current run is stale. Refusing to publish."
+            exit 1
+          fi
+
+      - name: Ensure release tag does not already exist
+        if: steps.release.outputs.should_publish == 'true'
         env:
-          TAG_NAME: ai-agent-notify-v${{ steps.version.outputs.next_version }}
+          TAG_NAME: ai-agent-notify-v${{ steps.release.outputs.target_version }}
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
-            echo "Tag ${TAG_NAME} already exists."
-            exit 0
+            echo "Tag ${TAG_NAME} already exists. Refusing to publish."
+            exit 1
           fi
+
+      - name: Publish package
+        if: steps.release.outputs.should_publish == 'true'
+        run: npm publish --provenance --access public
+
+      - name: Create release tag
+        if: steps.release.outputs.should_publish == 'true'
+        env:
+          TAG_NAME: ai-agent-notify-v${{ steps.release.outputs.target_version }}
+        run: |
           git tag "${TAG_NAME}"
           git push origin "refs/tags/${TAG_NAME}"
 
-      - name: Publish package
-        run: npm publish --provenance --access public
-
       - name: Create or update GitHub release
+        if: steps.release.outputs.should_publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ai-agent-notify-v${{ steps.version.outputs.next_version }}
+          TAG_NAME: ai-agent-notify-v${{ steps.release.outputs.target_version }}
           PACKAGE_NAME: ${{ steps.package.outputs.package_name }}
-          PACKAGE_VERSION: ${{ steps.version.outputs.next_version }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.target_version }}
         run: |
           title="${PACKAGE_NAME} v${PACKAGE_VERSION}"
           notes="Automated release for ${PACKAGE_NAME} v${PACKAGE_VERSION}."

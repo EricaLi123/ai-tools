@@ -9,6 +9,13 @@
 - approval 通知继续走 `codex-session-watch + codex-mcp-sidecar`。
 - Windows direct process launch 语境下，命令名显式写 `ai-agent-notify.cmd` / `npx.cmd`。
 
+## 开发与发布流程
+
+- 不要直接在 `main` 上改 `ai-agent-notify`；先从 `main` 切功能分支。
+- 向 `main` 提交 PR 时，由 [`ci-ai-agent-notify.yml`](../../../.github/workflows/ci-ai-agent-notify.yml) 跑 Windows 测试。
+- PR 合并到 `main` 后，由 [`publish-ai-agent-notify.yml`](../../../.github/workflows/publish-ai-agent-notify.yml) 自动发布 npm、tag 和 GitHub Release。
+- 仓库设置里应对 `main` 开启“必须通过 PR 合并”和“必须通过状态检查”。
+
 ## 建议阅读顺序
 
 1. [`principles.md`](./principles.md)：先看哪些边界不能随手打破。

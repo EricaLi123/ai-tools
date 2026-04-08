@@ -1,0 +1,71 @@
+name: CI ai-agent-notify
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect ai-agent-notify related changes
+        id: changes
+        shell: pwsh
+        run: |
+          $baseSha = "${{ github.event.pull_request.base.sha }}"
+          $headSha = "${{ github.event.pull_request.head.sha }}"
+          $changedFiles = git diff --name-only $baseSha $headSha
+          $relevantPrefixes = @(
+            "packages/ai-agent-notify/",
+            ".github/workflows/ci-ai-agent-notify.yml",
+            ".github/workflows/publish-ai-agent-notify.yml"
+          )
+          $shouldRun = $false
+          foreach ($file in $changedFiles) {
+            foreach ($prefix in $relevantPrefixes) {
+              if ($file.StartsWith($prefix)) {
+                $shouldRun = $true
+                break
+              }
+            }
+            if ($shouldRun) {
+              break
+            }
+          }
+          "should_run=$($shouldRun.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($shouldRun) {
+            Write-Host "Relevant ai-agent-notify changes detected."
+          } else {
+            Write-Host "No ai-agent-notify changes detected. Skipping package tests."
+          }
+
+      - name: Setup Node.js
+        if: steps.changes.outputs.should_run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/ai-agent-notify/package-lock.json
+
+      - name: Install dependencies
+        if: steps.changes.outputs.should_run == 'true'
+        working-directory: packages/ai-agent-notify
+        run: npm ci
+
+      - name: Run tests
+        if: steps.changes.outputs.should_run == 'true'
+        working-directory: packages/ai-agent-notify
+        run: npm test
+
+      - name: Mark skipped package test job
+        if: steps.changes.outputs.should_run != 'true'
+        run: echo "ai-agent-notify package unchanged on this PR."
