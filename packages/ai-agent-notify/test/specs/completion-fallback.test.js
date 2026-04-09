@@ -10,6 +10,7 @@ module.exports = function runCompletionFallbackTests(h) {
     ROOT,
     section,
     test,
+    TEST_PACKAGE_DIR,
   } = h;
   const completionReceipts = require(path.join(
     ROOT,
@@ -42,6 +43,14 @@ module.exports = function runCompletionFallbackTests(h) {
 
   function loadCompletionPending() {
     return require(path.join(ROOT, "lib", "codex-completion-pending.js"));
+  }
+
+  function loadSessionWatchHandlers() {
+    return require(path.join(ROOT, "lib", "codex-session-watch-handlers.js"));
+  }
+
+  function loadCompletionNotify() {
+    return require(path.join(ROOT, "lib", "codex-completion-notify.js"));
   }
 
   test("writeCodexCompletionReceiptForNotification writes a Stop receipt keyed by session + turn", () => {
@@ -432,5 +441,78 @@ module.exports = function runCompletionFallbackTests(h) {
       pendingCompletionNotifications.size === 0,
       "existing emitted map key should skip pending completion queue"
     );
+  });
+
+  test("handleSessionRecord queues rollout task_complete into pending completion state", () => {
+    const handlers = loadSessionWatchHandlers();
+    const pendingCompletionNotifications = new Map();
+
+    handlers.handleSessionRecord(
+      {
+        filePath:
+          "C:\\Users\\ericali\\.codex\\sessions\\2026\\04\\09\\rollout-2026-04-09T16-20-00-session-stop.jsonl",
+        sessionId: "session-stop",
+        cwd: TEST_PACKAGE_DIR,
+        turnId: "turn-stop",
+      },
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "task_complete",
+          turn_id: "turn-stop",
+          cwd: TEST_PACKAGE_DIR,
+        },
+      }),
+      {
+        runtime: { log: () => {} },
+        sessionsDir: ROOT,
+        terminal: { hwnd: null, shellPid: null, isWindowsTerminal: false },
+        emittedEventKeys: new Map(),
+        pendingApprovalNotifications: new Map(),
+        pendingApprovalCallIds: new Map(),
+        recentRequireEscalatedEvents: new Map(),
+        sessionApprovalGrants: new Map(),
+        approvedCommandRuleCache: { filePath: "", mtimeMs: -1, size: -1, rules: [] },
+        pendingCompletionNotifications,
+      }
+    );
+
+    assert(pendingCompletionNotifications.size === 1, "expected queued completion pending candidate");
+    const pending = pendingCompletionNotifications.values().next().value;
+    assert(pending.eventName === "Stop", "expected Stop event to be queued");
+    assert(pending.eventType === "task_complete", "expected task_complete fallback candidate");
+  });
+
+  test("prepared completion fallback reuses notify runtime and emits one Stop notification", () => {
+    const completionNotify = loadCompletionNotify();
+    const emitted = [];
+    const fakeChild = { on: () => {} };
+    const didEmit = completionNotify.emitPreparedCodexCompletionNotification({
+      prepared: {
+        event: {
+          source: "Codex",
+          eventName: "Stop",
+          title: "Done",
+          message: "Task finished",
+          eventType: "task_complete",
+          sessionId: "session-stop",
+          turnId: "turn-stop",
+          projectDir: TEST_PACKAGE_DIR,
+          dedupeKey: "session-stop|turn-stop|Stop",
+        },
+        notificationTerminal: { hwnd: null, shellPid: null, isWindowsTerminal: false },
+      },
+      runtime: { log: () => {} },
+      emittedEventKeys: new Map(),
+      origin: "pending",
+      emitNotificationImpl: (payload) => {
+        emitted.push(payload);
+        return fakeChild;
+      },
+    });
+
+    assert(didEmit === true, "expected fallback emit to return true");
+    assert(emitted.length === 1, "expected a single fallback notification emit");
+    assert(emitted[0].eventName === "Stop", "expected Stop notification payload");
   });
 };

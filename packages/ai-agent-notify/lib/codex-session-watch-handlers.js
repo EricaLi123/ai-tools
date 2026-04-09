@@ -3,6 +3,7 @@ const {
   cancelPendingApprovalNotificationsBySuppression,
   queuePendingApprovalNotification,
 } = require("./codex-approval-pending");
+const { queuePendingCompletionNotification } = require("./codex-completion-pending");
 const { emitCodexApprovalNotification } = require("./codex-approval-notify");
 const {
   getApprovedCommandRules,
@@ -35,6 +36,7 @@ function handleSessionRecord(
     emittedEventKeys,
     pendingApprovalNotifications,
     pendingApprovalCallIds,
+    pendingCompletionNotifications,
     recentRequireEscalatedEvents,
     sessionApprovalGrants,
     approvedCommandRuleCache,
@@ -122,8 +124,22 @@ function handleSessionRecord(
     return;
   }
 
+  if (record.type === "event_msg" && record.payload.type === "task_complete") {
+    state.enableCompletionCandidates = true;
+  }
+
   const event = buildCodexSessionEvent(state, record);
   if (!event) {
+    return;
+  }
+
+  if (event.eventName === "Stop") {
+    queuePendingCompletionNotification({
+      runtime,
+      pendingCompletionNotifications,
+      emittedEventKeys,
+      event,
+    });
     return;
   }
 

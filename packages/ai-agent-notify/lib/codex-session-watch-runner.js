@@ -6,6 +6,12 @@ const path = require("path");
 const { createApprovedCommandRuleCache } = require("./codex-approval-rules");
 const { flushPendingApprovalNotifications } = require("./codex-approval-pending");
 const {
+  emitPreparedCodexCompletionNotification,
+  prepareCodexCompletionNotification,
+} = require("./codex-completion-notify");
+const { flushPendingCompletionNotifications } = require("./codex-completion-pending");
+const { hasCodexCompletionReceipt } = require("./codex-completion-receipts");
+const {
   bootstrapExistingSessionFileState,
   createSessionFileState,
   listRolloutFiles,
@@ -65,6 +71,7 @@ async function runCodexSessionWatchMode(argv) {
   const emittedEventKeys = new Map();
   const pendingApprovalNotifications = new Map();
   const pendingApprovalCallIds = new Map();
+  const pendingCompletionNotifications = new Map();
   const approvedCommandRuleCache = createApprovedCommandRuleCache(
     path.join(getCodexHomeDir(), "rules", "default.rules")
   );
@@ -146,6 +153,7 @@ async function runCodexSessionWatchMode(argv) {
           emittedEventKeys,
           pendingApprovalNotifications,
           pendingApprovalCallIds,
+          pendingCompletionNotifications,
           recentRequireEscalatedEvents,
           sessionApprovalGrants,
           approvedCommandRuleCache,
@@ -196,6 +204,26 @@ async function runCodexSessionWatchMode(argv) {
         emittedEventKeys,
         pendingApprovalNotifications,
         pendingApprovalCallIds,
+      });
+      flushPendingCompletionNotifications({
+        runtime,
+        pendingCompletionNotifications,
+        emittedEventKeys,
+        preparePendingCompletionNotification: ({ pending }) =>
+          prepareCodexCompletionNotification({
+            event: pending,
+            runtime,
+            terminal,
+            sessionsDir,
+          }),
+        hasCompletionReceipt: (args) => hasCodexCompletionReceipt(args),
+        emitPreparedCompletionNotification: ({ prepared, origin }) =>
+          emitPreparedCodexCompletionNotification({
+            prepared,
+            runtime,
+            emittedEventKeys,
+            origin,
+          }),
       });
       pruneEmittedEventKeys(emittedEventKeys, 4096);
     } catch (error) {

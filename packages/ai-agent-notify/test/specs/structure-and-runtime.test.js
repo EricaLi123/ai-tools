@@ -22,6 +22,7 @@ module.exports = function runStructureAndRuntimeTests(h) {
     "lib/codex-approval-rules.js",
     "lib/codex-approval-session-grants.js",
     "lib/codex-completion-pending.js",
+    "lib/codex-completion-notify.js",
     "lib/codex-completion-receipts.js",
     "lib/codex-mcp-sidecar-mode.js",
     "lib/codex-mcp-server.js",
