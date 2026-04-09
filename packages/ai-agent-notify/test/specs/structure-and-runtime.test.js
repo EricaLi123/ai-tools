@@ -21,6 +21,7 @@ module.exports = function runStructureAndRuntimeTests(h) {
     "lib/codex-approval-pending.js",
     "lib/codex-approval-rules.js",
     "lib/codex-approval-session-grants.js",
+    "lib/codex-completion-receipts.js",
     "lib/codex-mcp-sidecar-mode.js",
     "lib/codex-mcp-server.js",
     "lib/codex-sidecar-matcher.js",
@@ -56,6 +57,7 @@ module.exports = function runStructureAndRuntimeTests(h) {
     "docs/history/codex-completion-findings.md",
     "docs/history/legacy-repo-codex-approval-notification-session-2026-03-18.md",
     "docs/history/tab-color-history.md",
+    "test/specs/completion-fallback.test.js",
   ].forEach((relPath) => {
     test(`${relPath} exists`, () => {
       assert(fs.existsSync(path.join(ROOT, relPath)), `${relPath} missing`);

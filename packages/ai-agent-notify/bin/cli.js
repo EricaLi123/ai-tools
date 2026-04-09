@@ -6,6 +6,9 @@ const path = require("path");
 const { runCodexMcpSidecarMode } = require("../lib/codex-mcp-sidecar-mode");
 const { runCodexSessionWatchMode } = require("../lib/codex-session-watch-runner");
 const {
+  writeCodexCompletionReceiptForNotification,
+} = require("../lib/codex-completion-receipts");
+const {
   createRuntime,
   detectTerminalContext,
   emitNotification,
@@ -109,6 +112,10 @@ async function runDefaultNotifyMode(argv) {
   });
   const sessionId = notification.sessionId || "unknown";
   const runtime = createRuntime(sessionId);
+  writeCodexCompletionReceiptForNotification({
+    notification,
+    runtime,
+  });
   const terminal = detectTerminalContext(argv, runtime.log);
 
   runtime.log(
