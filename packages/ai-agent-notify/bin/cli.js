@@ -19,10 +19,22 @@ if (require.main === module) {
 }
 
 async function runCli() {
+  const bootstrapRuntime = createRuntime("bootstrap");
+  bootstrapRuntime.log(
+    `bootstrap start modeHint=${process.argv[2] || "default"} argv=${JSON.stringify(
+      process.argv.slice(2)
+    )} cwd=${process.cwd()} ppid=${process.ppid}`
+  );
+
   try {
     ensureWindows();
     await main();
   } catch (error) {
+    bootstrapRuntime.log(
+      `bootstrap fatal modeHint=${process.argv[2] || "default"} error=${
+        error && error.message ? error.message : String(error)
+      }`
+    );
     console.error(error && error.message ? error.message : String(error));
     process.exit(1);
   }

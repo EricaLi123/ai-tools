@@ -194,20 +194,27 @@ module.exports = function runStructureAndRuntimeTests(h) {
   test("notify-runtime.js prefixes runtime log files with the package name", () => {
     assert(notifyRuntime.LOG_FILE_PREFIX === "ai-agent-notify");
     assert(notifyRuntimeContent.includes('const LOG_FILE_PREFIX = "ai-agent-notify"'));
-    assert(notifyRuntimeContent.includes('`${LOG_FILE_PREFIX}-${normalizedLogId}.log`'));
+    assert(notifyRuntimeContent.includes("function formatLogDay("));
+    assert(notifyRuntimeContent.includes('`${buildRuntimeLogStem(normalizedLogId)}-${formatLogDay(now)}.log`'));
   });
 
-  test("createRuntime exposes build identity for linked local debugging", () => {
-    const runtime = notifyRuntime.createRuntime(`build-info-${process.pid}-${Date.now()}`);
+  test("createRuntime exposes build identity for linked local debugging and buckets logs by day", () => {
+    const fixedNow = new Date("2026-04-09T08:30:00.000+08:00");
+    const runtime = notifyRuntime.createRuntime(`build-info-${process.pid}-${Date.now()}`, {
+      nowProvider: () => fixedNow,
+    });
 
     try {
       runtime.log("build identity test");
       const logContent = fs.readFileSync(runtime.logFile, "utf8");
+      const normalizedLogPath = normalizeTestPath(runtime.logFile);
 
       assert(runtime.buildInfo.version === pkg.version);
       assert(normalizeTestPath(runtime.buildInfo.packageRoot) === normalizeTestPath(ROOT));
       assert(runtime.buildInfo.installKind === "workspace");
       assert(runtime.buildInfo.sourceFingerprint.length === 12);
+      assert(normalizedLogPath.includes("/ai-agent-notify-"));
+      assert(normalizedLogPath.endsWith("-2026-04-09.log"));
       assert(logContent.includes(`ver=${runtime.buildInfo.version}`));
       assert(logContent.includes(`src=${runtime.buildInfo.sourceFingerprint}`));
       assert(logContent.includes(`install=${runtime.buildInfo.installKind}`));
@@ -215,6 +222,34 @@ module.exports = function runStructureAndRuntimeTests(h) {
       try {
         fs.unlinkSync(runtime.logFile);
       } catch {}
+    }
+  });
+
+  test("createRuntime rolls over to a new daily log file when the date changes", () => {
+    const logId = `daily-rollover-${process.pid}-${Date.now()}`;
+    let currentNow = new Date("2026-04-09T23:59:58.000+08:00");
+    const runtime = notifyRuntime.createRuntime(logId, {
+      nowProvider: () => currentNow,
+    });
+    const firstLogFile = runtime.logFile;
+
+    try {
+      runtime.log("day one");
+      currentNow = new Date("2026-04-10T00:00:02.000+08:00");
+      const secondLogFile = runtime.logFile;
+      runtime.log("day two");
+
+      assert(normalizeTestPath(firstLogFile).endsWith("-2026-04-09.log"));
+      assert(normalizeTestPath(secondLogFile).endsWith("-2026-04-10.log"));
+      assert(firstLogFile !== secondLogFile);
+      assert(fs.readFileSync(firstLogFile, "utf8").includes("day one"));
+      assert(fs.readFileSync(secondLogFile, "utf8").includes("day two"));
+    } finally {
+      [firstLogFile, runtime.logFile].forEach((filePath) => {
+        try {
+          fs.unlinkSync(filePath);
+        } catch {}
+      });
     }
   });
 
@@ -325,9 +360,17 @@ module.exports = function runStructureAndRuntimeTests(h) {
     assert(notifyRuntimeContent.includes("TOAST_NOTIFY_TITLE"));
     assert(notifyRuntimeContent.includes("TOAST_NOTIFY_MESSAGE"));
     assert(notifyRuntimeContent.includes("TOAST_NOTIFY_LOG_FILE"));
+    assert(notifyRuntimeContent.includes("TOAST_NOTIFY_LOG_ROOT"));
+    assert(notifyRuntimeContent.includes("TOAST_NOTIFY_LOG_STEM"));
     assert(!notifyRuntimeContent.includes("TOAST_NOTIFY_PROJECT_DIR"));
     assert(!notifyRuntimeContent.includes("CLAUDE_NOTIFY_PROJECT_DIR"));
     assert(!notifyRuntimeContent.includes("CLAUDE_PROJECT_DIR"));
+  });
+
+  test("cli.js writes a shared bootstrap log before per-session routing", () => {
+    assert(cliContent.includes('createRuntime("bootstrap")'));
+    assert(cliContent.includes("bootstrap start"));
+    assert(cliContent.includes("modeHint="));
   });
 
   test("start-hidden.vbs runs argv command hidden", () => {
@@ -340,6 +383,8 @@ module.exports = function runStructureAndRuntimeTests(h) {
     assert(watcherContent.includes("Write-OscToInheritedStreams"));
     assert(watcherContent.includes("Write-OscToAttachedConsole"));
     assert(watcherContent.includes("AttachConsole"));
+    assert(watcherContent.includes("TOAST_NOTIFY_LOG_ROOT"));
+    assert(watcherContent.includes("TOAST_NOTIFY_LOG_STEM"));
     assert(watcherContent.includes("[Console]::OpenStandardOutput()"));
     assert(watcherContent.includes("[Console]::OpenStandardError()"));
     assert(watcherContent.includes('"$ESC]104;264$ST"'));

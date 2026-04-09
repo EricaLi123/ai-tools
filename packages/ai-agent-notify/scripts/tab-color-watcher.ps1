@@ -10,10 +10,18 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # --- 日志 ---
+function Resolve-LogFile {
+    if ($env:TOAST_NOTIFY_LOG_ROOT -and $env:TOAST_NOTIFY_LOG_STEM) {
+        return Join-Path $env:TOAST_NOTIFY_LOG_ROOT "$($env:TOAST_NOTIFY_LOG_STEM)-$(Get-Date -Format 'yyyy-MM-dd').log"
+    }
+    return $env:TOAST_NOTIFY_LOG_FILE
+}
+
 function Write-Log($msg) {
     $line = "[$((Get-Date).ToString('o'))] [watcher pid=$PID] $msg"
-    if ($env:TOAST_NOTIFY_LOG_FILE) {
-        try { [System.IO.File]::AppendAllText($env:TOAST_NOTIFY_LOG_FILE, "$line`n") } catch {}
+    $logFile = Resolve-LogFile
+    if ($logFile) {
+        try { [System.IO.File]::AppendAllText($logFile, "$line`n") } catch {}
     }
 }
 

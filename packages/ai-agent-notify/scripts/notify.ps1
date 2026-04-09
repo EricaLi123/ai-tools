@@ -2,12 +2,20 @@
 # The toast is sent first, then any window/taskbar hinting happens afterwards.
 # cli.js resolves the payload once and passes notify inputs through env vars.
 
-# cli.js computes and passes the log file path.
-$LogFile = $env:TOAST_NOTIFY_LOG_FILE
+function Resolve-LogFile {
+    if ($env:TOAST_NOTIFY_LOG_ROOT -and $env:TOAST_NOTIFY_LOG_STEM) {
+        return Join-Path $env:TOAST_NOTIFY_LOG_ROOT "$($env:TOAST_NOTIFY_LOG_STEM)-$(Get-Date -Format 'yyyy-MM-dd').log"
+    }
+    return $env:TOAST_NOTIFY_LOG_FILE
+}
+
 function Write-Log($msg) {
+    $LogFile = Resolve-LogFile
     $line = "[$((Get-Date).ToString('o'))] [ps1 pid=$PID] $msg"
     [Console]::Error.WriteLine($line)
-    try { Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8 } catch {}
+    if ($LogFile) {
+        try { Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8 } catch {}
+    }
 }
 
 Write-Log "started"

@@ -21,18 +21,21 @@ const BUILD_FINGERPRINT_EXTENSIONS = new Set([".js", ".json", ".ps1", ".vbs"]);
 const BUILD_INFO = Object.freeze(readBuildInfo());
 const IS_DEV = BUILD_INFO.installKind !== "published";
 
-function createRuntime(logId) {
+function createRuntime(logId, { nowProvider } = {}) {
   fs.mkdirSync(LOG_DIR, { recursive: true });
-  const normalizedLogId = String(logId || "unknown").replace(/[^A-Za-z0-9._-]+/g, "-");
-  const logFile = path.join(LOG_DIR, `${LOG_FILE_PREFIX}-${normalizedLogId}.log`);
+  const normalizedLogId = normalizeLogId(logId);
+  const getNow = typeof nowProvider === "function" ? nowProvider : () => new Date();
 
   function log(message) {
+    const now = getNow();
+    const logFile = getRuntimeLogFilePath(normalizedLogId, { now });
     const line =
-      `[${new Date().toISOString()}] ` +
+      `[${now.toISOString()}] ` +
       `[node pid=${process.pid} ${BUILD_INFO.logTag}] ` +
       `${message}\n`;
     process.stderr.write(line);
     try {
+      ensureLogFileDirectory(logFile);
       fs.appendFileSync(logFile, line);
     } catch {}
   }
@@ -40,9 +43,37 @@ function createRuntime(logId) {
   return {
     buildInfo: BUILD_INFO,
     isDev: IS_DEV,
-    logFile,
+    logStem: buildRuntimeLogStem(normalizedLogId),
+    get logFile() {
+      return getRuntimeLogFilePath(normalizedLogId, { now: getNow() });
+    },
     log,
   };
+}
+
+function normalizeLogId(logId) {
+  return String(logId || "unknown").replace(/[^A-Za-z0-9._-]+/g, "-");
+}
+
+function formatLogDay(now = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getRuntimeLogFilePath(logId, { now = new Date() } = {}) {
+  const normalizedLogId = normalizeLogId(logId);
+  return path.join(LOG_DIR, `${buildRuntimeLogStem(normalizedLogId)}-${formatLogDay(now)}.log`);
+}
+
+function buildRuntimeLogStem(logId) {
+  const normalizedLogId = normalizeLogId(logId);
+  return `${LOG_FILE_PREFIX}-${normalizedLogId}`;
+}
+
+function ensureLogFileDirectory(logFile) {
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
 }
 
 function readBuildInfo() {
@@ -175,6 +206,8 @@ function emitNotification({ source, eventName, title, message, rawEventType, run
     TOAST_NOTIFY_EVENT: eventName,
     TOAST_NOTIFY_IS_DEV: runtime.isDev ? "1" : "0",
     TOAST_NOTIFY_LOG_FILE: runtime.logFile,
+    TOAST_NOTIFY_LOG_ROOT: LOG_DIR,
+    TOAST_NOTIFY_LOG_STEM: runtime.logStem,
   };
 
   if (source) {
@@ -281,6 +314,8 @@ function startTabColorWatcher({ eventName, runtime, terminal }) {
         env: {
           ...process.env,
           TOAST_NOTIFY_LOG_FILE: runtime.logFile,
+          TOAST_NOTIFY_LOG_ROOT: LOG_DIR,
+          TOAST_NOTIFY_LOG_STEM: runtime.logStem,
         },
       }
     );
@@ -320,6 +355,9 @@ module.exports = {
   createRuntime,
   detectTerminalContext,
   emitNotification,
+  formatLogDay,
   findParentInfo,
+  buildRuntimeLogStem,
+  getRuntimeLogFilePath,
   writeChildStderr,
 };

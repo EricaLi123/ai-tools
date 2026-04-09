@@ -8,9 +8,15 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Write-Log($msg) {
-    if (-not $env:TOAST_NOTIFY_LOG_FILE) { return }
+    $logFile = $null
+    if ($env:TOAST_NOTIFY_LOG_ROOT -and $env:TOAST_NOTIFY_LOG_STEM) {
+        $logFile = Join-Path $env:TOAST_NOTIFY_LOG_ROOT "$($env:TOAST_NOTIFY_LOG_STEM)-$(Get-Date -Format 'yyyy-MM-dd').log"
+    } else {
+        $logFile = $env:TOAST_NOTIFY_LOG_FILE
+    }
+    if (-not $logFile) { return }
     $line = "[$((Get-Date).ToString('o'))] [watcher-launcher pid=$PID] $msg"
-    try { [System.IO.File]::AppendAllText($env:TOAST_NOTIFY_LOG_FILE, "$line`n") } catch {}
+    try { [System.IO.File]::AppendAllText($logFile, "$line`n") } catch {}
 }
 
 try {

@@ -9,7 +9,12 @@
 $packageRoot    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $notifyScript   = Join-Path $packageRoot "scripts\notify.ps1"
 $findHwndScript = Join-Path $packageRoot "scripts\find-hwnd.ps1"
-$logFile        = Join-Path $env:TEMP "ai-agent-notify-test.log"
+$logRoot        = Join-Path $env:TEMP "ai-agent-notify"
+$logFile        = Join-Path $logRoot "ai-agent-notify-test-$(Get-Date -Format 'yyyy-MM-dd').log"
+
+if (-not (Test-Path -LiteralPath $logRoot)) {
+    New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
+}
 
 # Reuse the current terminal window when possible.
 $findResult = & powershell.exe -NoProfile -EP Bypass -File $findHwndScript -StartPid $PID 2>$null
