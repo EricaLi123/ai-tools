@@ -103,6 +103,31 @@ module.exports = function runCodexEventTests(h) {
     assert(event.dedupeKey === "session-4|patch|turn-4|");
   });
 
+  test("session watcher recognizes rollout task_complete event_msg records as Stop candidates", () => {
+    const event = events.buildCodexSessionEvent(
+      {
+        filePath:
+          "C:\\Users\\ericali\\.codex\\sessions\\2026\\04\\09\\rollout-2026-04-09T16-20-00-session-stop.jsonl",
+        sessionId: "session-stop",
+        cwd: "D:\\tmp",
+        turnId: "turn-stop",
+      },
+      {
+        type: "event_msg",
+        payload: {
+          type: "task_complete",
+          turn_id: "turn-stop",
+          cwd: TEST_PACKAGE_DIR,
+        },
+      }
+    );
+
+    assert(event);
+    assert(event.eventName === "Stop");
+    assert(event.eventType === "task_complete");
+    assert(event.dedupeKey === "session-stop|turn-stop|Stop");
+  });
+
   test("session watcher recognizes request_user_input prompts from rollout JSONL", () => {
     const promptText = "What plan should I use for the next step?";
     const event = events.buildCodexSessionEvent(

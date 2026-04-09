@@ -40,6 +40,10 @@ module.exports = function runCompletionFallbackTests(h) {
 
   section("Completion fallback");
 
+  function loadCompletionPending() {
+    return require(path.join(ROOT, "lib", "codex-completion-pending.js"));
+  }
+
   test("writeCodexCompletionReceiptForNotification writes a Stop receipt keyed by session + turn", () => {
     const sessionId = `completion-session-${process.pid}-${Date.now()}`;
     const turnId = `turn-${process.hrtime.bigint().toString()}`;
@@ -235,5 +239,171 @@ module.exports = function runCompletionFallbackTests(h) {
     } finally {
       deleteReceiptByKey(key);
     }
+  });
+
+  test("pending completion fallback prepares during grace and only checks receipts + emits after deadline", () => {
+    const completionPending = loadCompletionPending();
+    const pendingCompletionNotifications = new Map();
+    const emittedEventKeys = new Set();
+    const logs = [];
+    const runtime = {
+      log: (line) => logs.push(line),
+    };
+    const event = {
+      sourceId: "codex-session-watch",
+      sessionId: "pending-session",
+      turnId: "pending-turn",
+      eventName: "Stop",
+      eventType: "task_complete",
+      dedupeKey: "pending-session|pending-turn|Stop",
+    };
+    const prepareCalls = [];
+    const receiptCalls = [];
+    const emitCalls = [];
+
+    completionPending.queuePendingCompletionNotification({
+      runtime,
+      pendingCompletionNotifications,
+      emittedEventKeys,
+      event,
+      nowMs: 1_000,
+    });
+
+    assert(pendingCompletionNotifications.size === 1, "expected one pending completion");
+    const pending = pendingCompletionNotifications.get(event.dedupeKey);
+    assert(pending, "missing queued pending completion");
+    assert(pending.pendingSinceMs === 1_000, "pendingSinceMs mismatch");
+    assert(
+      pending.deadlineMs === 1_000 + completionPending.CODEX_COMPLETION_FALLBACK_GRACE_MS,
+      "deadlineMs mismatch"
+    );
+    assert(
+      pending.graceMs === completionPending.CODEX_COMPLETION_FALLBACK_GRACE_MS,
+      "graceMs mismatch"
+    );
+    assert(pending.prepared === null, "prepared should initialize to null");
+
+    completionPending.flushPendingCompletionNotifications({
+      runtime,
+      pendingCompletionNotifications,
+      emittedEventKeys,
+      nowMs: pending.deadlineMs - 1,
+      preparePendingCompletionNotification: ({ pending: pendingEvent }) => {
+        prepareCalls.push(pendingEvent.dedupeKey);
+        return { event: pendingEvent, title: "Prepared completion" };
+      },
+      hasCompletionReceipt: (input) => {
+        receiptCalls.push(input);
+        return false;
+      },
+      emitPreparedCompletionNotification: (input) => {
+        emitCalls.push(input);
+      },
+    });
+
+    assert(prepareCalls.length === 1, "prepare should run during grace window");
+    assert(receiptCalls.length === 0, "receipt check should wait until deadline");
+    assert(emitCalls.length === 0, "emit should wait until deadline");
+    assert(
+      pendingCompletionNotifications.has(event.dedupeKey),
+      "pending completion should remain queued during grace"
+    );
+
+    completionPending.flushPendingCompletionNotifications({
+      runtime,
+      pendingCompletionNotifications,
+      emittedEventKeys,
+      nowMs: pending.deadlineMs,
+      preparePendingCompletionNotification: ({ pending: pendingEvent }) => {
+        prepareCalls.push(`repeat:${pendingEvent.dedupeKey}`);
+        return { event: pendingEvent, title: "Prepared completion (duplicate)" };
+      },
+      hasCompletionReceipt: (input) => {
+        receiptCalls.push(input);
+        return false;
+      },
+      emitPreparedCompletionNotification: (input) => {
+        emitCalls.push(input);
+      },
+    });
+
+    assert(prepareCalls.length === 1, "prepare should not run twice");
+    assert(receiptCalls.length === 1, "receipt check should run at deadline");
+    assert(receiptCalls[0].sessionId === event.sessionId, "receipt sessionId mismatch");
+    assert(receiptCalls[0].turnId === event.turnId, "receipt turnId mismatch");
+    assert(receiptCalls[0].eventName === "Stop", "receipt eventName mismatch");
+    assert(receiptCalls[0].nowMs === pending.deadlineMs, "receipt nowMs mismatch");
+    assert(emitCalls.length === 1, "completion should emit when receipt is absent");
+    assert(
+      emitCalls[0].prepared && emitCalls[0].prepared.title === "Prepared completion",
+      "emit should use prepared completion payload"
+    );
+    assert(emitCalls[0].origin === "pending", "emit origin should be pending");
+    assert(emitCalls[0].emittedEventKeys === emittedEventKeys, "emit should forward emitted key set");
+    assert(
+      !pendingCompletionNotifications.has(event.dedupeKey),
+      "pending completion should be removed after emit"
+    );
+    assert(
+      logs.some((line) => line.includes("queued completion pending")),
+      "queue path should log pending completion enqueue"
+    );
+  });
+
+  test("pending completion fallback drops queued completion when matching receipt exists", () => {
+    const completionPending = loadCompletionPending();
+    const pendingCompletionNotifications = new Map();
+    const emittedEventKeys = new Set();
+    const logs = [];
+    const runtime = {
+      log: (line) => logs.push(line),
+    };
+    const event = {
+      sourceId: "codex-session-watch",
+      sessionId: "receipt-session",
+      turnId: "receipt-turn",
+      eventName: "Stop",
+      eventType: "task_complete",
+    };
+    const emitCalls = [];
+    const prepareCalls = [];
+
+    completionPending.queuePendingCompletionNotification({
+      runtime,
+      pendingCompletionNotifications,
+      emittedEventKeys,
+      event,
+      nowMs: 2_000,
+    });
+
+    const key = completionPending.buildPendingCompletionKey(event);
+    const pending = pendingCompletionNotifications.get(key);
+    assert(pending, "expected queued completion candidate");
+
+    completionPending.flushPendingCompletionNotifications({
+      runtime,
+      pendingCompletionNotifications,
+      emittedEventKeys,
+      nowMs: pending.deadlineMs,
+      preparePendingCompletionNotification: ({ pending: pendingEvent }) => {
+        prepareCalls.push(pendingEvent.turnId);
+        return { event: pendingEvent, title: "Prepared receipt candidate" };
+      },
+      hasCompletionReceipt: () => true,
+      emitPreparedCompletionNotification: (input) => {
+        emitCalls.push(input);
+      },
+    });
+
+    assert(prepareCalls.length === 1, "prepare should still run once before receipt check");
+    assert(emitCalls.length === 0, "matching receipt should suppress fallback emit");
+    assert(
+      !pendingCompletionNotifications.has(key),
+      "pending completion should be dropped when receipt exists"
+    );
+    assert(
+      logs.some((line) => line.includes("reason=receipt_found")),
+      "drop path should log receipt_found reason"
+    );
   });
 };

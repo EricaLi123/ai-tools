@@ -1,4 +1,5 @@
 const { createNotificationSpec } = require("./notification-source-display");
+const { buildCodexCompletionReceiptKey } = require("./codex-completion-receipts");
 const {
   buildApprovalDedupeKey,
   getCodexExecApprovalDescriptor,
@@ -51,6 +52,13 @@ function buildCodexSessionEvent(state, record) {
         approvalId,
         approvalKind: "patch",
         callId,
+        payload,
+        projectDir,
+        sessionId,
+        turnId,
+      });
+    case "task_complete":
+      return createSessionCompletionEvent({
         payload,
         projectDir,
         sessionId,
@@ -162,6 +170,29 @@ function createSessionApprovalRequestEvent({
       callId,
       approvalId,
       approvalKind,
+    }),
+  };
+}
+
+function createSessionCompletionEvent({ payload, projectDir, sessionId, turnId }) {
+  if (!turnId) {
+    return null;
+  }
+
+  return {
+    ...createNotificationSpec({
+      sourceId: "codex-session-watch",
+      sessionId,
+      turnId,
+      eventName: "Stop",
+      projectDir,
+      rawEventType: payload.type,
+    }),
+    eventType: payload.type,
+    dedupeKey: buildCodexCompletionReceiptKey({
+      sessionId,
+      turnId,
+      eventName: "Stop",
     }),
   };
 }
