@@ -116,11 +116,11 @@ function defaultPreparePendingCompletionNotification({ pending }) {
 
 function defaultEmitPreparedCompletionNotification({ prepared, emittedEventKeys }) {
   const event = prepared && prepared.event;
-  if (!event || !event.dedupeKey || !emittedEventKeys) {
+  if (!event || !event.dedupeKey || !emittedEventKeys || typeof emittedEventKeys.set !== "function") {
     return;
   }
 
-  emittedEventKeys.add(event.dedupeKey);
+  emittedEventKeys.set(event.dedupeKey, Date.now());
 }
 
 module.exports = {

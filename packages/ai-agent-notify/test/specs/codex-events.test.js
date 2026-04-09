@@ -1,5 +1,5 @@
 module.exports = function runCodexEventTests(h) {
-  const { assert, events, section, test, TEST_PACKAGE_DIR } = h;
+  const { assert, events, path, ROOT, section, test, TEST_PACKAGE_DIR } = h;
 
   section("Codex events");
 
@@ -103,7 +103,7 @@ module.exports = function runCodexEventTests(h) {
     assert(event.dedupeKey === "session-4|patch|turn-4|");
   });
 
-  test("session watcher recognizes rollout task_complete event_msg records as Stop candidates", () => {
+  test("session watcher recognizes rollout task_complete event_msg records as Stop candidates when opted in", () => {
     const event = events.buildCodexSessionEvent(
       {
         filePath:
@@ -111,6 +111,7 @@ module.exports = function runCodexEventTests(h) {
         sessionId: "session-stop",
         cwd: "D:\\tmp",
         turnId: "turn-stop",
+        enableCompletionCandidates: true,
       },
       {
         type: "event_msg",
@@ -126,6 +127,103 @@ module.exports = function runCodexEventTests(h) {
     assert(event.eventName === "Stop");
     assert(event.eventType === "task_complete");
     assert(event.dedupeKey === "session-stop|turn-stop|Stop");
+  });
+
+  test("session watcher ignores rollout task_complete event_msg records unless completion candidates are enabled", () => {
+    const event = events.buildCodexSessionEvent(
+      {
+        filePath:
+          "C:\\Users\\ericali\\.codex\\sessions\\2026\\04\\09\\rollout-2026-04-09T16-20-00-session-stop-disabled.jsonl",
+        sessionId: "session-stop-disabled",
+        cwd: "D:\\tmp",
+        turnId: "turn-stop-disabled",
+      },
+      {
+        type: "event_msg",
+        payload: {
+          type: "task_complete",
+          turn_id: "turn-stop-disabled",
+          cwd: TEST_PACKAGE_DIR,
+        },
+      }
+    );
+
+    assert(event === null);
+  });
+
+  test("session watcher drops unkeyable rollout task_complete candidates", () => {
+    const event = events.buildCodexSessionEvent(
+      {
+        filePath: "C:\\Users\\ericali\\.codex\\sessions\\2026\\04\\09\\rollout-no-session.jsonl",
+        sessionId: "unknown",
+        cwd: "D:\\tmp",
+        turnId: "turn-stop-unkeyable",
+        enableCompletionCandidates: true,
+      },
+      {
+        type: "event_msg",
+        payload: {
+          type: "task_complete",
+          turn_id: "turn-stop-unkeyable",
+          cwd: TEST_PACKAGE_DIR,
+        },
+      }
+    );
+
+    assert(event === null);
+  });
+
+  test("session handler does not emit rollout task_complete events by default live state", () => {
+    const handlersPath = path.join(ROOT, "lib", "codex-session-watch-handlers.js");
+    const approvalNotifyPath = path.join(ROOT, "lib", "codex-approval-notify.js");
+    const handlersModuleKey = require.resolve(handlersPath);
+    const approvalNotify = require(approvalNotifyPath);
+    const originalEmit = approvalNotify.emitCodexApprovalNotification;
+    let emitCalls = 0;
+    approvalNotify.emitCodexApprovalNotification = () => {
+      emitCalls += 1;
+      return true;
+    };
+
+    try {
+      delete require.cache[handlersModuleKey];
+      const handlers = require(handlersPath);
+
+      handlers.handleSessionRecord(
+        {
+          filePath:
+            "C:\\Users\\ericali\\.codex\\sessions\\2026\\04\\09\\rollout-2026-04-09T16-20-00-session-live-default.jsonl",
+          sessionId: "session-live-default",
+          cwd: TEST_PACKAGE_DIR,
+          turnId: "turn-live-default",
+        },
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "task_complete",
+            turn_id: "turn-live-default",
+            cwd: TEST_PACKAGE_DIR,
+          },
+        }),
+        {
+          runtime: { log: () => {} },
+          sessionsDir: "",
+          terminal: { hwnd: null, shellPid: null, isWindowsTerminal: false },
+          emittedEventKeys: new Map(),
+          pendingApprovalNotifications: new Map(),
+          pendingApprovalCallIds: new Map(),
+          recentRequireEscalatedEvents: new Map(),
+          sessionApprovalGrants: new Map(),
+          approvedCommandRuleCache: { value: [], loadedAtMs: 0 },
+        }
+      );
+
+      assert(emitCalls === 0, "live default handler path should not emit task_complete yet");
+    } finally {
+      approvalNotify.emitCodexApprovalNotification = originalEmit;
+      delete require.cache[handlersModuleKey];
+      require(handlersPath);
+    }
   });
 
   test("session watcher recognizes request_user_input prompts from rollout JSONL", () => {

@@ -59,6 +59,7 @@ function buildCodexSessionEvent(state, record) {
       });
     case "task_complete":
       return createSessionCompletionEvent({
+        completionCandidatesEnabled: !!state.enableCompletionCandidates,
         payload,
         projectDir,
         sessionId,
@@ -174,8 +175,23 @@ function createSessionApprovalRequestEvent({
   };
 }
 
-function createSessionCompletionEvent({ payload, projectDir, sessionId, turnId }) {
-  if (!turnId) {
+function createSessionCompletionEvent({
+  completionCandidatesEnabled,
+  payload,
+  projectDir,
+  sessionId,
+  turnId,
+}) {
+  if (!completionCandidatesEnabled || !turnId) {
+    return null;
+  }
+
+  const dedupeKey = buildCodexCompletionReceiptKey({
+    sessionId,
+    turnId,
+    eventName: "Stop",
+  });
+  if (!dedupeKey) {
     return null;
   }
 
@@ -189,11 +205,7 @@ function createSessionCompletionEvent({ payload, projectDir, sessionId, turnId }
       rawEventType: payload.type,
     }),
     eventType: payload.type,
-    dedupeKey: buildCodexCompletionReceiptKey({
-      sessionId,
-      turnId,
-      eventName: "Stop",
-    }),
+    dedupeKey,
   };
 }
 

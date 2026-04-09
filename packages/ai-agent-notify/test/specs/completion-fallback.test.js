@@ -244,7 +244,7 @@ module.exports = function runCompletionFallbackTests(h) {
   test("pending completion fallback prepares during grace and only checks receipts + emits after deadline", () => {
     const completionPending = loadCompletionPending();
     const pendingCompletionNotifications = new Map();
-    const emittedEventKeys = new Set();
+    const emittedEventKeys = new Map();
     const logs = [];
     const runtime = {
       log: (line) => logs.push(line),
@@ -353,7 +353,7 @@ module.exports = function runCompletionFallbackTests(h) {
   test("pending completion fallback drops queued completion when matching receipt exists", () => {
     const completionPending = loadCompletionPending();
     const pendingCompletionNotifications = new Map();
-    const emittedEventKeys = new Set();
+    const emittedEventKeys = new Map();
     const logs = [];
     const runtime = {
       log: (line) => logs.push(line),
@@ -404,6 +404,33 @@ module.exports = function runCompletionFallbackTests(h) {
     assert(
       logs.some((line) => line.includes("reason=receipt_found")),
       "drop path should log receipt_found reason"
+    );
+  });
+
+  test("pending completion fallback skips queueing when emitted key already exists in map", () => {
+    const completionPending = loadCompletionPending();
+    const pendingCompletionNotifications = new Map();
+    const emittedEventKeys = new Map([["queued-session|queued-turn|Stop", Date.now()]]);
+    const runtime = { log: () => {} };
+
+    completionPending.queuePendingCompletionNotification({
+      runtime,
+      pendingCompletionNotifications,
+      emittedEventKeys,
+      event: {
+        sourceId: "codex-session-watch",
+        sessionId: "queued-session",
+        turnId: "queued-turn",
+        eventName: "Stop",
+        eventType: "task_complete",
+        dedupeKey: "queued-session|queued-turn|Stop",
+      },
+      nowMs: 3_000,
+    });
+
+    assert(
+      pendingCompletionNotifications.size === 0,
+      "existing emitted map key should skip pending completion queue"
     );
   });
 };
