@@ -81,6 +81,11 @@ has been normalized into a valid Codex completion notification shape. This
 receipt is not the notification itself; it is only proof that the `notify`
 route reached this package.
 
+The receipt should be written before terminal-context preparation, PowerShell
+spawn, flash handling, or any other notification-side work. The receipt exists
+to suppress fallback quickly, so delaying it would force watcher grace windows
+to become longer.
+
 Each receipt key should include:
 
 - `sessionId`
@@ -114,6 +119,18 @@ window expires:
 - if a matching completion receipt exists, the watcher drops the candidate
 - if no matching receipt exists, the watcher emits a fallback `Stop`
   notification
+
+During that grace window, watcher may do non-emitting preparation work early,
+for example:
+
+- building the fallback notification spec
+- reconciling sidecar state
+- resolving the best terminal candidate
+
+But the final “should I emit the fallback?” decision should happen immediately
+before `emitNotification()` is called, with one last receipt check at that
+point. This overlaps some preparation with the grace window without weakening
+dedupe correctness.
 
 ### Emission Path
 
@@ -166,8 +183,10 @@ remain intact.
 1. Codex completion happens but legacy `notify` does not reach this package
 2. watcher sees a rollout completion candidate
 3. watcher queues it for a short grace window
-4. no matching receipt appears
-5. watcher emits one fallback `Stop` notification
+4. watcher may prepare fallback state during that grace window
+5. immediately before emitting, watcher checks receipt state one more time
+6. no matching receipt exists, so watcher emits one fallback `Stop`
+   notification
 
 ## Error Handling
 
@@ -175,6 +194,8 @@ remain intact.
   break the normal notify path.
 - If watcher cannot persist or read completion pending state, log it and fail
   closed by not emitting speculative duplicates immediately.
+- If watcher can prepare fallback context but receipt state changes before final
+  emit, the receipt wins and watcher must drop the fallback.
 - If rollout completion parsing proves too weak in real usage, add a later
   follow-up design for TUI completion fallback rather than broadening this
   version ad hoc.
