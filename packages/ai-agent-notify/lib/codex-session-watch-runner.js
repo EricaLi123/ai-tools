@@ -223,6 +223,8 @@ async function runCodexSessionWatchMode(argv) {
             runtime,
             emittedEventKeys,
             origin,
+            terminal,
+            sessionsDir,
           }),
       });
       pruneEmittedEventKeys(emittedEventKeys, 4096);

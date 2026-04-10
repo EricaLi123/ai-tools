@@ -11,15 +11,17 @@ function prepareCodexCompletionNotification({
   sessionsDir,
   resolveTerminalContext = resolveApprovalTerminalContext,
 }) {
+  const notificationTerminal = resolveTerminalContext({
+    sessionId: event && event.sessionId,
+    projectDir: event && event.projectDir,
+    fallbackTerminal: terminal,
+    log: runtime && runtime.log,
+    sessionsDir,
+  });
+
   return {
     event,
-    notificationTerminal: resolveTerminalContext({
-      sessionId: event && event.sessionId,
-      projectDir: event && event.projectDir,
-      fallbackTerminal: terminal,
-      log: runtime && runtime.log,
-      sessionsDir,
-    }),
+    notificationTerminal,
   };
 }
 
@@ -28,11 +30,25 @@ function emitPreparedCodexCompletionNotification({
   runtime,
   emittedEventKeys,
   origin,
+  terminal,
+  sessionsDir,
+  resolveTerminalContext = resolveApprovalTerminalContext,
   emitNotificationImpl = emitNotification,
 }) {
   const event = prepared && prepared.event;
   if (!event || !shouldEmitEventKey(emittedEventKeys, event.dedupeKey)) {
     return false;
+  }
+
+  let notificationTerminal = prepared && prepared.notificationTerminal;
+  if (isNeutralOrDefaultTerminal(notificationTerminal)) {
+    notificationTerminal = resolveTerminalContext({
+      sessionId: event.sessionId,
+      projectDir: event.projectDir,
+      fallbackTerminal: terminal || notificationTerminal || { hwnd: null, shellPid: null },
+      log: runtime && runtime.log,
+      sessionsDir,
+    });
   }
 
   runtime.log(
@@ -46,7 +62,7 @@ function emitPreparedCodexCompletionNotification({
     message: event.message,
     rawEventType: event.eventType,
     runtime,
-    terminal: prepared.notificationTerminal,
+    terminal: notificationTerminal,
   });
 
   if (child && typeof child.on === "function") {
@@ -64,6 +80,10 @@ function emitPreparedCodexCompletionNotification({
   }
 
   return true;
+}
+
+function isNeutralOrDefaultTerminal(terminal) {
+  return !terminal || (!terminal.hwnd && !terminal.shellPid);
 }
 
 module.exports = {

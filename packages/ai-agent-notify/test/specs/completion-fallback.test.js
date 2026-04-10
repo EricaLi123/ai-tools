@@ -517,4 +517,249 @@ module.exports = function runCompletionFallbackTests(h) {
     assert(emitted[0].eventName === "Stop", "expected Stop notification payload");
     assert(emitted[0].runtime === runtimeObject, "expected runtime object forwarded to notify call");
   });
+
+  test("prepared completion fallback refreshes neutral terminal before emit", () => {
+    const completionNotify = loadCompletionNotify();
+    const runtimeObject = { log: () => {} };
+    const emitted = [];
+    const fakeChild = { on: () => {} };
+    const refreshedTerminal = { hwnd: 777, shellPid: 999, isWindowsTerminal: false };
+
+    const prepared = completionNotify.prepareCodexCompletionNotification({
+      event: {
+        source: "Codex",
+        eventName: "Stop",
+        title: "Done",
+        message: "Task finished",
+        eventType: "task_complete",
+        sessionId: "session-refresh",
+        turnId: "turn-refresh",
+        projectDir: TEST_PACKAGE_DIR,
+        dedupeKey: "session-refresh|turn-refresh|Stop",
+      },
+      runtime: runtimeObject,
+      terminal: { hwnd: null, shellPid: null, isWindowsTerminal: false },
+      sessionsDir: ROOT,
+      resolveTerminalContext: () => ({ hwnd: null, shellPid: null, isWindowsTerminal: false }),
+    });
+
+    const didEmit = completionNotify.emitPreparedCodexCompletionNotification({
+      prepared,
+      runtime: runtimeObject,
+      emittedEventKeys: new Map(),
+      origin: "pending",
+      terminal: { hwnd: null, shellPid: null, isWindowsTerminal: false },
+      sessionsDir: ROOT,
+      resolveTerminalContext: () => refreshedTerminal,
+      emitNotificationImpl: (payload) => {
+        emitted.push(payload);
+        return fakeChild;
+      },
+    });
+
+    assert(didEmit === true, "expected fallback emit to return true");
+    assert(emitted.length === 1, "expected a single fallback notification emit");
+    assert(emitted[0].terminal === refreshedTerminal, "expected terminal refresh before emit");
+  });
+
+  test("runner flushes approval before completion and emits delayed fallback once at deadline", () => {
+    const unique = `runner-${process.pid}-${Date.now()}`;
+    const tempRoot = path.join(ROOT, `.tmp-${unique}`);
+    const sessionsRoot = path.join(tempRoot, "sessions");
+    const sessionDir = path.join(sessionsRoot, "2026", "04", "09");
+    const rolloutPath = path.join(
+      sessionDir,
+      "rollout-2026-04-09T10-00-00-session-runner-integration.jsonl"
+    );
+    const tuiLogPath = path.join(tempRoot, "codex-tui.log");
+    const tempLogDir = path.join(tempRoot, "logs");
+    const lockPath = path.join(tempLogDir, "codex-session-watch.lock");
+
+    const notifyRuntimePath = path.join(ROOT, "lib", "notify-runtime.js");
+    const approvalPendingPath = path.join(ROOT, "lib", "codex-approval-pending.js");
+    const completionPendingPath = path.join(ROOT, "lib", "codex-completion-pending.js");
+    const completionReceiptsPath = path.join(ROOT, "lib", "codex-completion-receipts.js");
+    const completionNotifyPath = path.join(ROOT, "lib", "codex-completion-notify.js");
+    const runnerPath = path.join(ROOT, "lib", "codex-session-watch-runner.js");
+
+    const notifyRuntimeModule = require(notifyRuntimePath);
+    const approvalPendingModule = require(approvalPendingPath);
+    const completionPendingModule = require(completionPendingPath);
+    const completionReceiptsModule = require(completionReceiptsPath);
+    const completionNotifyModule = require(completionNotifyPath);
+
+    const originalCreateRuntime = notifyRuntimeModule.createRuntime;
+    const originalCreateNeutralTerminalContext = notifyRuntimeModule.createNeutralTerminalContext;
+    const originalLogDir = notifyRuntimeModule.LOG_DIR;
+    const originalFlushApproval = approvalPendingModule.flushPendingApprovalNotifications;
+    const originalFlushCompletion = completionPendingModule.flushPendingCompletionNotifications;
+    const originalHasReceipt = completionReceiptsModule.hasCodexCompletionReceipt;
+    const originalPrepareCompletion = completionNotifyModule.prepareCodexCompletionNotification;
+    const originalEmitCompletion = completionNotifyModule.emitPreparedCodexCompletionNotification;
+    const originalSetInterval = global.setInterval;
+    const originalClearInterval = global.clearInterval;
+    const originalDateNow = Date.now;
+    const originalProcessOn = process.on;
+    const originalProcessExit = process.exit;
+
+    const logs = [];
+    const flushOrder = [];
+    const receiptChecks = [];
+    const emittedPayloads = [];
+    const signalHandlers = new Map();
+    const exitCodes = [];
+    const fakeChild = { on: () => {} };
+    let intervalCallback = null;
+    let nowMs = 50_000;
+
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(rolloutPath, "", "utf8");
+
+    try {
+      notifyRuntimeModule.LOG_DIR = tempLogDir;
+      notifyRuntimeModule.createRuntime = () => ({
+        buildInfo: { packageRoot: ROOT },
+        isDev: true,
+        logFile: path.join(tempRoot, "runner.log"),
+        logStem: "runner-test",
+        log: (line) => logs.push(line),
+      });
+      notifyRuntimeModule.createNeutralTerminalContext = () => ({
+        hwnd: null,
+        shellPid: null,
+        isWindowsTerminal: false,
+      });
+
+      approvalPendingModule.flushPendingApprovalNotifications = (args) => {
+        flushOrder.push("approval");
+        return originalFlushApproval(args);
+      };
+      completionPendingModule.flushPendingCompletionNotifications = (args) => {
+        flushOrder.push("completion");
+        return originalFlushCompletion(args);
+      };
+      completionReceiptsModule.hasCodexCompletionReceipt = (args) => {
+        receiptChecks.push(args);
+        return false;
+      };
+      completionNotifyModule.prepareCodexCompletionNotification = (args) =>
+        originalPrepareCompletion({
+          ...args,
+          resolveTerminalContext: () => ({
+            hwnd: null,
+            shellPid: null,
+            isWindowsTerminal: false,
+          }),
+        });
+      completionNotifyModule.emitPreparedCodexCompletionNotification = (args) =>
+        originalEmitCompletion({
+          ...args,
+          resolveTerminalContext: () => ({ hwnd: 777, shellPid: 999, isWindowsTerminal: false }),
+          emitNotificationImpl: (payload) => {
+            emittedPayloads.push(payload);
+            return fakeChild;
+          },
+        });
+
+      global.setInterval = (callback) => {
+        intervalCallback = callback;
+        return { __testInterval: true };
+      };
+      global.clearInterval = () => {};
+      Date.now = () => nowMs;
+      process.on = (eventName, handler) => {
+        signalHandlers.set(eventName, handler);
+        return process;
+      };
+      process.exit = (code) => {
+        exitCodes.push(code);
+      };
+
+      delete require.cache[require.resolve(runnerPath)];
+      const runner = require(runnerPath);
+      runner.runCodexSessionWatchMode([
+        "--sessions-dir",
+        sessionsRoot,
+        "--tui-log",
+        tuiLogPath,
+        "--poll-ms",
+        "1000",
+      ]);
+
+      assert(typeof intervalCallback === "function", "runner should register periodic scan");
+      const startupFlushCount = flushOrder.length;
+
+      fs.appendFileSync(
+        rolloutPath,
+        `${JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "task_complete",
+            turn_id: "turn-runner-integration",
+            cwd: TEST_PACKAGE_DIR,
+          },
+        })}\n`,
+        "utf8"
+      );
+      intervalCallback();
+
+      assert(emittedPayloads.length === 0, "deadline should prevent completion emit before grace expires");
+      assert(receiptChecks.length === 0, "deadline should prevent early receipt checks");
+      assert(
+        logs.some((line) => line.includes("queued completion pending")),
+        "update scan should queue completion candidate"
+      );
+      assert(
+        flushOrder.length >= startupFlushCount + 2,
+        "expected update scan to run both flush functions"
+      );
+      for (let i = startupFlushCount; i + 1 < flushOrder.length; i += 2) {
+        assert(flushOrder[i] === "approval", "approval flush should run before completion flush");
+        assert(flushOrder[i + 1] === "completion", "completion flush should follow approval flush");
+      }
+
+      nowMs += completionPendingModule.CODEX_COMPLETION_FALLBACK_GRACE_MS;
+      intervalCallback();
+
+      assert(receiptChecks.length === 1, "deadline scan should perform one final receipt recheck");
+      assert(emittedPayloads.length === 1, "deadline scan should emit one fallback notification");
+      assert(
+        emittedPayloads[0].terminal && emittedPayloads[0].terminal.hwnd === 777,
+        "fallback emit should use refreshed terminal context"
+      );
+
+      nowMs += completionPendingModule.CODEX_COMPLETION_FALLBACK_GRACE_MS;
+      intervalCallback();
+
+      assert(receiptChecks.length === 1, "completed fallback should not re-check receipt again");
+      assert(emittedPayloads.length === 1, "fallback should emit only once");
+
+      const stopHandler = signalHandlers.get("SIGTERM");
+      if (typeof stopHandler === "function") {
+        stopHandler();
+      }
+      assert(exitCodes.includes(0), "shutdown should call process.exit(0)");
+    } finally {
+      notifyRuntimeModule.createRuntime = originalCreateRuntime;
+      notifyRuntimeModule.createNeutralTerminalContext = originalCreateNeutralTerminalContext;
+      notifyRuntimeModule.LOG_DIR = originalLogDir;
+      approvalPendingModule.flushPendingApprovalNotifications = originalFlushApproval;
+      completionPendingModule.flushPendingCompletionNotifications = originalFlushCompletion;
+      completionReceiptsModule.hasCodexCompletionReceipt = originalHasReceipt;
+      completionNotifyModule.prepareCodexCompletionNotification = originalPrepareCompletion;
+      completionNotifyModule.emitPreparedCodexCompletionNotification = originalEmitCompletion;
+      global.setInterval = originalSetInterval;
+      global.clearInterval = originalClearInterval;
+      Date.now = originalDateNow;
+      process.on = originalProcessOn;
+      process.exit = originalProcessExit;
+      delete require.cache[require.resolve(runnerPath)];
+      try {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+      } catch {}
+      try {
+        fs.unlinkSync(lockPath);
+      } catch {}
+    }
+  });
 };

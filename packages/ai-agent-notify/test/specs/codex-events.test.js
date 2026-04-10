@@ -173,13 +173,14 @@ module.exports = function runCodexEventTests(h) {
     assert(event === null);
   });
 
-  test("session handler does not emit rollout task_complete events by default live state", () => {
+  test("session handler does not immediately emit rollout task_complete events in live state", () => {
     const handlersPath = path.join(ROOT, "lib", "codex-session-watch-handlers.js");
     const approvalNotifyPath = path.join(ROOT, "lib", "codex-approval-notify.js");
     const handlersModuleKey = require.resolve(handlersPath);
     const approvalNotify = require(approvalNotifyPath);
     const originalEmit = approvalNotify.emitCodexApprovalNotification;
     let emitCalls = 0;
+    const pendingCompletionNotifications = new Map();
     approvalNotify.emitCodexApprovalNotification = () => {
       emitCalls += 1;
       return true;
@@ -212,13 +213,18 @@ module.exports = function runCodexEventTests(h) {
           emittedEventKeys: new Map(),
           pendingApprovalNotifications: new Map(),
           pendingApprovalCallIds: new Map(),
+          pendingCompletionNotifications,
           recentRequireEscalatedEvents: new Map(),
           sessionApprovalGrants: new Map(),
           approvedCommandRuleCache: { value: [], loadedAtMs: 0 },
         }
       );
 
-      assert(emitCalls === 0, "live default handler path should not emit task_complete yet");
+      assert(emitCalls === 0, "live handler path should not emit task_complete immediately");
+      assert(
+        pendingCompletionNotifications.size === 1,
+        "live handler path should queue task_complete into pending completion state"
+      );
     } finally {
       approvalNotify.emitCodexApprovalNotification = originalEmit;
       delete require.cache[handlersModuleKey];
