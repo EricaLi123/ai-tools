@@ -1,0 +1,5 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+[[skills.config]]
+path = "../skills/codex-new-hook"
+enabled = true
