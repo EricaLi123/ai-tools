@@ -13,16 +13,16 @@ description: Use when the user explicitly asks to audit whether Codex now has ne
 
 默认目标是当前仓库这套 Codex 通知链，而不是泛泛讨论 Claude Code 或通用 hooks：
 
-- 事件判定与终端解析：[codex-approval-notify.js](../../packages/ai-agent-notify/lib/codex-approval-notify.js)
-- 会话监视与补发逻辑：[codex-session-watch-runner.js](../../packages/ai-agent-notify/lib/codex-session-watch-runner.js)
-- 终端高亮与等待复位：[tab-color-watcher.ps1](../../packages/ai-agent-notify/scripts/tab-color-watcher.ps1)
-- Windows 通知与闪烁：[notify.ps1](../../packages/ai-agent-notify/scripts/notify.ps1)
+- 事件判定与终端解析：[codex-approval-notify.js](../../../packages/ai-agent-notify/lib/codex-approval-notify.js)
+- 会话监视与补发逻辑：[codex-session-watch-runner.js](../../../packages/ai-agent-notify/lib/codex-session-watch-runner.js)
+- 终端高亮与等待复位：[tab-color-watcher.ps1](../../../packages/ai-agent-notify/scripts/tab-color-watcher.ps1)
+- Windows 通知与闪烁：[notify.ps1](../../../packages/ai-agent-notify/scripts/notify.ps1)
 
 默认还要先尊重这个仓库已经写进文档的路线边界，而不是每次从零开始假设所有官方能力都还是候选项：
 
-- approval 主路线与 owner 边界：[../../packages/ai-agent-notify/docs/codex-approval.md](../../packages/ai-agent-notify/docs/codex-approval.md)
-- 整体架构与官方能力边界：[../../packages/ai-agent-notify/docs/architecture.md](../../packages/ai-agent-notify/docs/architecture.md)
-- `app-server` 已被验证后否掉的历史归档：[../../packages/ai-agent-notify/docs/history/legacy-repo-codex-approval-notification-session-2026-03-18.md](../../packages/ai-agent-notify/docs/history/legacy-repo-codex-approval-notification-session-2026-03-18.md)
+- approval 主路线与 owner 边界：[../../../packages/ai-agent-notify/docs/codex-approval.md](../../../packages/ai-agent-notify/docs/codex-approval.md)
+- 整体架构与官方能力边界：[../../../packages/ai-agent-notify/docs/architecture.md](../../../packages/ai-agent-notify/docs/architecture.md)
+- `app-server` 已被验证后否掉的历史归档：[../../../packages/ai-agent-notify/docs/history/legacy-repo-codex-approval-notification-session-2026-03-18.md](../../../packages/ai-agent-notify/docs/history/legacy-repo-codex-approval-notification-session-2026-03-18.md)
 
 ## 信息源规则
 
