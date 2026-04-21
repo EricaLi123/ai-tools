@@ -2,7 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const { StringDecoder } = require("string_decoder");
 
-const { parseSessionIdFromRolloutPath } = require("./codex-session-event-descriptors");
+const {
+  getSubagentParentSessionId,
+  parseSessionIdFromRolloutPath,
+} = require("./codex-session-event-descriptors");
 const { fileExistsCaseInsensitive, stripUtf8Bom } = require("./shared-utils");
 
 function listRolloutFiles(rootDir, log) {
@@ -48,6 +51,7 @@ function createSessionFileState(filePath) {
   return {
     filePath,
     sessionId: parseSessionIdFromRolloutPath(filePath),
+    subagentParentSessionId: "",
     cwd: "",
     turnId: "",
     approvalPolicy: "",
@@ -70,6 +74,7 @@ function createTailFileState(filePath) {
 function bootstrapExistingSessionFileState(state, stat, log) {
   const metadata = readRolloutMetadata(state.filePath, log);
   state.sessionId = metadata.sessionId || state.sessionId;
+  state.subagentParentSessionId = metadata.subagentParentSessionId || state.subagentParentSessionId;
   state.cwd = metadata.cwd || state.cwd;
   state.approvalPolicy = metadata.approvalPolicy || state.approvalPolicy;
   state.sandboxPolicy = metadata.sandboxPolicy || state.sandboxPolicy;
@@ -85,6 +90,7 @@ function bootstrapTailFileState(state, stat) {
 function readRolloutMetadata(filePath, log) {
   const result = {
     sessionId: parseSessionIdFromRolloutPath(filePath),
+    subagentParentSessionId: "",
     cwd: "",
     approvalPolicy: "",
     sandboxPolicy: null,
@@ -136,6 +142,9 @@ function consumeRolloutMetadataChunk(result, buffer, preferLatestTurnContext) {
     if (record.type === "session_meta" && record.payload) {
       if (record.payload.id) {
         result.sessionId = record.payload.id;
+      }
+      if (!result.subagentParentSessionId) {
+        result.subagentParentSessionId = getSubagentParentSessionId(record.payload);
       }
       if (!result.cwd && record.payload.cwd) {
         result.cwd = record.payload.cwd;

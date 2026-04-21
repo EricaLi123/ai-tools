@@ -29,6 +29,13 @@
 - approval 继续由 `codex-session-watch` 识别，`codex-mcp-sidecar` 只负责记录启动期 terminal observation 和兜底拉起 watcher。
 - `sessionId -> terminal context` 的解释权收口在 watcher，而不是 sidecar。
 
+## 子 agent 通知策略
+
+- watcher 继续跟踪子 session，因为子 agent 可能独立产生真实 `PermissionRequest`。
+- 对用户可见的 approval 提醒，事实来源可以是子 session；父 session 只做编排关联，不应把同一次 approval 再复制成一条父通知。
+- 对用户可见的 `task_complete` / `Stop`，默认只关注 root / 父 session；子 agent 完成通常只是内部编排细节，不应单独提醒用户。
+- 这不等于停止读取子 rollout；对子 session 仍要保留语义监听，只是要抑制子 session 的 completion 类通知。
+
 ## 官方约束
 
 - 官方文档当前只把 `notify` 定义为“Codex 在支持的事件上启动一个外部程序，并给它传一个 JSON 参数”。

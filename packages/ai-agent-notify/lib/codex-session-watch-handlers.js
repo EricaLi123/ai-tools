@@ -23,7 +23,10 @@ const {
   buildCodexTuiInputEvent,
   parseCodexTuiApprovalConfirmation,
 } = require("./codex-session-tui-events");
-const { parseSessionIdFromRolloutPath } = require("./codex-session-event-descriptors");
+const {
+  getSubagentParentSessionId,
+  parseSessionIdFromRolloutPath,
+} = require("./codex-session-event-descriptors");
 const { stripUtf8Bom } = require("./shared-utils");
 
 function handleSessionRecord(
@@ -53,6 +56,9 @@ function handleSessionRecord(
   if (record.type === "session_meta" && record.payload) {
     if (record.payload.id) {
       state.sessionId = record.payload.id;
+    }
+    if (!state.subagentParentSessionId) {
+      state.subagentParentSessionId = getSubagentParentSessionId(record.payload);
     }
     if (record.payload.cwd) {
       state.cwd = record.payload.cwd;

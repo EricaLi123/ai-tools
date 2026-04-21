@@ -49,6 +49,10 @@ module.exports = function runCompletionFallbackTests(h) {
     return require(path.join(ROOT, "lib", "codex-session-watch-handlers.js"));
   }
 
+  function loadSessionWatchFiles() {
+    return require(path.join(ROOT, "lib", "codex-session-watch-files.js"));
+  }
+
   function loadCompletionNotify() {
     return require(path.join(ROOT, "lib", "codex-completion-notify.js"));
   }
@@ -550,6 +554,113 @@ module.exports = function runCompletionFallbackTests(h) {
     const pending = pendingCompletionNotifications.values().next().value;
     assert(pending.eventName === "Stop", "expected Stop event to be queued");
     assert(pending.eventType === "task_complete", "expected task_complete fallback candidate");
+  });
+
+  test("handleSessionRecord ignores rollout task_complete for child sessions", () => {
+    const handlers = loadSessionWatchHandlers();
+    const pendingCompletionNotifications = new Map();
+    const state = {
+      filePath:
+        "C:\\Users\\ericali\\.codex\\sessions\\2026\\04\\21\\rollout-2026-04-21T13-57-51-session-child.jsonl",
+      sessionId: "session-child",
+      cwd: TEST_PACKAGE_DIR,
+      turnId: "turn-child",
+    };
+    const handlerArgs = {
+      runtime: { log: () => {} },
+      sessionsDir: ROOT,
+      terminal: { hwnd: null, shellPid: null, isWindowsTerminal: false },
+      emittedEventKeys: new Map(),
+      pendingApprovalNotifications: new Map(),
+      pendingApprovalCallIds: new Map(),
+      recentRequireEscalatedEvents: new Map(),
+      sessionApprovalGrants: new Map(),
+      approvedCommandRuleCache: { filePath: "", mtimeMs: -1, size: -1, rules: [] },
+      pendingCompletionNotifications,
+    };
+
+    handlers.handleSessionRecord(
+      state,
+      JSON.stringify({
+        type: "session_meta",
+        payload: {
+          id: "session-child",
+          forked_from_id: "session-parent",
+          cwd: TEST_PACKAGE_DIR,
+        },
+      }),
+      handlerArgs
+    );
+
+    handlers.handleSessionRecord(
+      state,
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "task_complete",
+          turn_id: "turn-child",
+          cwd: TEST_PACKAGE_DIR,
+        },
+      }),
+      handlerArgs
+    );
+
+    assert(
+      pendingCompletionNotifications.size === 0,
+      "child session task_complete should not queue a pending completion notification"
+    );
+  });
+
+  test("bootstrapExistingSessionFileState keeps child-session metadata for completion suppression", () => {
+    const sessionWatchFiles = loadSessionWatchFiles();
+    const unique = `child-rollout-bootstrap-${process.pid}-${Date.now()}`;
+    const tempRoot = path.join(ROOT, `.tmp-${unique}`);
+    const sessionDir = path.join(tempRoot, "sessions", "2026", "04", "21");
+    const rolloutPath = path.join(
+      sessionDir,
+      "rollout-2026-04-21T13-57-51-session-child-bootstrap.jsonl"
+    );
+
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(
+      rolloutPath,
+      [
+        JSON.stringify({
+          type: "session_meta",
+          payload: {
+            id: "session-child-bootstrap",
+            forked_from_id: "session-parent-bootstrap",
+            cwd: TEST_PACKAGE_DIR,
+          },
+        }),
+        JSON.stringify({
+          type: "session_meta",
+          payload: {
+            id: "session-parent-bootstrap",
+            cwd: TEST_PACKAGE_DIR,
+          },
+        }),
+      ].join("\n"),
+      "utf8"
+    );
+
+    try {
+      const state = sessionWatchFiles.createSessionFileState(rolloutPath);
+      sessionWatchFiles.bootstrapExistingSessionFileState(
+        state,
+        fs.statSync(rolloutPath),
+        () => {}
+      );
+
+      assert(
+        state.subagentParentSessionId === "session-parent-bootstrap",
+        "bootstrap should preserve subagent parent session metadata"
+      );
+    } finally {
+      try {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+      } catch {}
+    }
   });
 
   test("prepared completion fallback reuses notify runtime and emits one Stop notification", () => {

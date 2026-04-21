@@ -84,6 +84,33 @@ function parseSessionIdFromRolloutPath(filePath) {
   return match ? match[1] : "";
 }
 
+function getSubagentParentSessionId(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return "";
+  }
+
+  if (typeof payload.forked_from_id === "string" && payload.forked_from_id.trim()) {
+    return payload.forked_from_id.trim();
+  }
+
+  const source = payload.source;
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    return "";
+  }
+
+  const subagent = source.subagent;
+  if (!subagent || typeof subagent !== "object" || Array.isArray(subagent)) {
+    return "";
+  }
+
+  const threadSpawn = subagent.thread_spawn;
+  if (!threadSpawn || typeof threadSpawn !== "object" || Array.isArray(threadSpawn)) {
+    return "";
+  }
+
+  return typeof threadSpawn.parent_thread_id === "string" ? threadSpawn.parent_thread_id.trim() : "";
+}
+
 function normalizeInlineText(value) {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
 }
@@ -105,6 +132,7 @@ module.exports = {
   getCodexExecApprovalDescriptor,
   getCodexInputRequestDescriptor,
   getCodexInputRequestMessage,
+  getSubagentParentSessionId,
   parseJsonObjectMaybe,
   parseSessionIdFromRolloutPath,
 };

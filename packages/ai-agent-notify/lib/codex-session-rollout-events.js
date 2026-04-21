@@ -63,6 +63,7 @@ function buildCodexSessionEvent(state, record) {
         payload,
         projectDir,
         sessionId,
+        subagentParentSessionId: state.subagentParentSessionId || "",
         turnId,
       });
     default:
@@ -180,9 +181,10 @@ function createSessionCompletionEvent({
   payload,
   projectDir,
   sessionId,
+  subagentParentSessionId,
   turnId,
 }) {
-  if (!completionCandidatesEnabled || !turnId) {
+  if (!completionCandidatesEnabled || !turnId || subagentParentSessionId) {
     return null;
   }
 
