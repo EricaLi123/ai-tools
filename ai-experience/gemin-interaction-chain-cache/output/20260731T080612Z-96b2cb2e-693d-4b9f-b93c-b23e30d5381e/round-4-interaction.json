@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdtRmRzYXVqQkdkM09qdU1QdmRIbDJBWRIXeUZkc2FwNkFNYlRfanVNUHA5ZWJzUU0",
+  "created": "2026-07-31T08:07:36Z",
+  "updated": "2026-07-31T08:07:36Z",
+  "usage": {
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 9742
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_input_tokens": 9742,
+    "total_output_tokens": 19,
+    "total_thought_tokens": 0,
+    "total_tokens": 9761,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EjQKMgERTTIPrDgNG1Bmt1zJlIVnb3lq34PAQSJITuvAoqZYBmM6ot2WVKEZth5Vx6loxxxu",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"城市心跳：图书馆的一日流光\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"城市心跳：图书馆的一日流光\"\n}",
+  "object": "interaction"
+}

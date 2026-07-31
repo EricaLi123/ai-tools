@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdXU0ZzYXJ6b0VhYTdxZmtQazRqbDRRRRIXWGlGc2FzblVON3pkNC1FUGdLX3gtUVE",
+  "created": "2026-07-31T04:15:26Z",
+  "updated": "2026-07-31T04:15:26Z",
+  "usage": {
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 4759
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_input_tokens": 4759,
+    "total_output_tokens": 17,
+    "total_thought_tokens": 0,
+    "total_tokens": 4776,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EjQKMgERTTIPQ5e2yImSkGeNNuheTflJ008hhnOZABnjU2eNQT0QBMfAwoagggkuFsJubI94",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"图书馆昼夜的文明守望\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"图书馆昼夜的文明守望\"\n}",
+  "object": "interaction"
+}

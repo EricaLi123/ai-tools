@@ -1,0 +1,73 @@
+{
+  "run_id": "f1da103a-5b47-4581-bc4c-bb4f0d72d461",
+  "started_at": "2026-07-31T05:56:52.084472+00:00",
+  "finished_at": "2026-07-31T05:57:45.190770+00:00",
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "parameters": {
+    "essay_characters": 6000,
+    "topic": "一座城市公共图书馆从清晨到夜晚的一天",
+    "temperature": 0.1,
+    "thinking_level": "low",
+    "max_output_tokens": 12000,
+    "minimum_cache_tokens": 4096
+  },
+  "contract_sha256": "bc7fbe4426d9958f77cbab21fb97994764449f8fa580e14de354bbbf9128b11b",
+  "rounds": {
+    "round_1": {
+      "interaction_id": "v1_ChdUVGxzYXBfREdiVF9qdU1QcDllYnNRTRIXVFRsc2FwX0RHYlRfanVNUHA5ZWJzUU0",
+      "status": "completed",
+      "content_characters": 5564,
+      "content_sha256": "908a3c9be712e2dc9be7ded645224b6138d149f53ecf19071015de54830e6b34",
+      "usage": {
+        "total_input_tokens": 119,
+        "total_output_tokens": 4113,
+        "total_cached_tokens": 0,
+        "total_thought_tokens": 1139
+      },
+      "result_file": "D:\\git\\leyser-ai-service\\scripts\\gemini_interactions_cache_demo\\output\\20260731T055652Z-f1da103a-5b47-4581-bc4c-bb4f0d72d461\\round-1-interaction.json"
+    },
+    "round_2": {
+      "interaction_id": "v1_ChdUVGxzYXBfREdiVF9qdU1QcDllYnNRTRIXVVRsc2FzQzdPY3lxanVNUGg0R1p3UU0",
+      "status": "completed",
+      "content_characters": 10,
+      "content_sha256": "05a72d332ce2e927d11498f73d0eb855f25bc839191614f4733ac9df1deab203",
+      "usage": {
+        "total_input_tokens": 4265,
+        "total_output_tokens": 18,
+        "total_cached_tokens": 0,
+        "total_thought_tokens": 0
+      },
+      "result_file": "D:\\git\\leyser-ai-service\\scripts\\gemini_interactions_cache_demo\\output\\20260731T055652Z-f1da103a-5b47-4581-bc4c-bb4f0d72d461\\round-2-interaction.json"
+    },
+    "round_3": {
+      "interaction_id": "v1_ChdUVGxzYXBfREdiVF9qdU1QcDllYnNRTRIXVmpsc2FzdlVPOHVyanVNUHNxemM4QU0",
+      "status": "completed",
+      "content_characters": 24,
+      "content_sha256": "0b5a4623e2f3dbf0ea47cdf235135036f5998d7d24b71b66bad4670a1f169562",
+      "usage": {
+        "total_input_tokens": 4320,
+        "total_output_tokens": 31,
+        "total_cached_tokens": 2000,
+        "total_thought_tokens": 0
+      },
+      "result_file": "D:\\git\\leyser-ai-service\\scripts\\gemini_interactions_cache_demo\\output\\20260731T055652Z-f1da103a-5b47-4581-bc4c-bb4f0d72d461\\round-3-interaction.json"
+    }
+  },
+  "cache": {
+    "round_2": {
+      "minimum_tokens": 4096,
+      "precondition_met": true,
+      "hit": false,
+      "cached_token_ratio": 0.0
+    },
+    "round_3": {
+      "minimum_tokens": 4096,
+      "precondition_met": true,
+      "hit": true,
+      "cached_token_ratio": 0.46296296296296297
+    },
+    "round_3_uses_round_2_parent": true
+  },
+  "error": null
+}

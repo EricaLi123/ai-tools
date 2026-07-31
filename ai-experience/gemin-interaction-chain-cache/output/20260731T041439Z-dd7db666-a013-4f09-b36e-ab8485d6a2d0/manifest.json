@@ -1,0 +1,49 @@
+{
+  "run_id": "dd7db666-a013-4f09-b36e-ab8485d6a2d0",
+  "started_at": "2026-07-31T04:14:39.646760+00:00",
+  "finished_at": "2026-07-31T04:15:29.539747+00:00",
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "parameters": {
+    "essay_characters": 6000,
+    "topic": "一座城市公共图书馆从清晨到夜晚的一天",
+    "temperature": 0.1,
+    "thinking_level": "low",
+    "max_output_tokens": 12000,
+    "minimum_cache_tokens": 4096
+  },
+  "contract_sha256": "bc7fbe4426d9958f77cbab21fb97994764449f8fa580e14de354bbbf9128b11b",
+  "rounds": {
+    "round_1": {
+      "interaction_id": "v1_ChdXU0ZzYXJ6b0VhYTdxZmtQazRqbDRRRRIXV1NGc2Fyem9FYWE3cWZrUGs0amw0UUU",
+      "status": "completed",
+      "content_characters": 6299,
+      "content_sha256": "02d46506070ba9f27b3d6db016dcad3ded198529bd21e9b2158e3eda621a2d50",
+      "usage": {
+        "total_input_tokens": 119,
+        "total_output_tokens": 4607,
+        "total_cached_tokens": 0
+      },
+      "result_file": "D:\\git\\leyser-ai-service\\scripts\\gemini_interactions_cache_demo\\output\\20260731T041439Z-dd7db666-a013-4f09-b36e-ab8485d6a2d0\\round-1-interaction.json"
+    },
+    "round_2": {
+      "interaction_id": "v1_ChdXU0ZzYXJ6b0VhYTdxZmtQazRqbDRRRRIXWGlGc2FzblVON3pkNC1FUGdLX3gtUVE",
+      "status": "completed",
+      "content_characters": 10,
+      "content_sha256": "123a44f2bbaabeae5acedc9e5b4d46b557f7e5caacf8febedd4c81342486f840",
+      "usage": {
+        "total_input_tokens": 4759,
+        "total_output_tokens": 17,
+        "total_cached_tokens": 0
+      },
+      "result_file": "D:\\git\\leyser-ai-service\\scripts\\gemini_interactions_cache_demo\\output\\20260731T041439Z-dd7db666-a013-4f09-b36e-ab8485d6a2d0\\round-2-interaction.json"
+    }
+  },
+  "cache": {
+    "minimum_tokens": 4096,
+    "precondition_met": true,
+    "hit": false,
+    "cached_token_ratio": 0.0
+  },
+  "error": null
+}

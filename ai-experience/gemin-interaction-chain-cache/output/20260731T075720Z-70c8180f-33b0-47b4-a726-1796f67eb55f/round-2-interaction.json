@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdpVlZzYXNheUVPU2VnOFVQeGQyMXFBMBIXalZWc2FwaWJOS2FmanVNUDc3YmhxQU0",
+  "created": "2026-07-31T07:58:05Z",
+  "updated": "2026-07-31T07:58:05Z",
+  "usage": {
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 11135
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_input_tokens": 11135,
+    "total_output_tokens": 18,
+    "total_thought_tokens": 0,
+    "total_tokens": 11153,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EjQKMgERTTIPT37Nq9vBPP4PUj9pNWgIzafHxxi1KrA50yAbCtPKGy6WZ0zG9Hbmoe0Q1Naq",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"图书馆的一天：书香长明\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"图书馆的一天：书香长明\"\n}",
+  "object": "interaction"
+}

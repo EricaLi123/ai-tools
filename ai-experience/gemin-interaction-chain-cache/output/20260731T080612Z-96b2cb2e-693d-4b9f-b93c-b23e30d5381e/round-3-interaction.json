@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdtRmRzYXVqQkdkM09qdU1QdmRIbDJBWRIXdVZkc2FzZWVOODdMZzhVUHRkeXl3UTg",
+  "created": "2026-07-31T08:07:21Z",
+  "updated": "2026-07-31T08:07:21Z",
+  "usage": {
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 9674
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_input_tokens": 9674,
+    "total_output_tokens": 31,
+    "total_thought_tokens": 575,
+    "total_tokens": 10280,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "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",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"阅见城市心跳，在图书馆的一日流光中，让知识照亮前行之路。\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"阅见城市心跳，在图书馆的一日流光中，让知识照亮前行之路。\"\n}",
+  "object": "interaction"
+}

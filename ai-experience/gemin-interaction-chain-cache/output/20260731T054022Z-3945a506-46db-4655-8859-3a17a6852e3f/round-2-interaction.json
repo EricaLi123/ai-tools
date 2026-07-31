@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdjVFZzYXEyZ0RMS25qdU1QbGMyVXdRWRIXZGpWc2F1YVdFTnZtanVNUGdweUE0QUk",
+  "created": "2026-07-31T05:41:10Z",
+  "updated": "2026-07-31T05:41:10Z",
+  "usage": {
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 4308
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_input_tokens": 4308,
+    "total_output_tokens": 19,
+    "total_thought_tokens": 0,
+    "total_tokens": 4327,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EjQKMgERTTIPjMv7b72grn+LSdEyrsc9bnUUbRRpLR3We2fT5iugDXAMNE16e8uZ0wXwrLFJ",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"书香润城，昼夜不息。\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"书香润城，昼夜不息。\"\n}",
+  "object": "interaction"
+}

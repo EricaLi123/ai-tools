@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_Chc3ajFzYW9LdUstX05qdU1Qa2J5WDhRWRIXX0Qxc2F2Sy1OODNXanVNUGxaR051UU0",
+  "created": "2026-07-31T06:17:32Z",
+  "updated": "2026-07-31T06:17:32Z",
+  "usage": {
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 3803
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_input_tokens": 3803,
+    "total_output_tokens": 23,
+    "total_thought_tokens": 0,
+    "total_tokens": 3826,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EjQKMgERTTIPLcqeXv3MfYY4x+12QGn+839yUpN6LKAo/9Vx26OvEE/fwcqPqiPOtFwadKTh",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"城市书房：昼夜流转的灵魂栖息地\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"城市书房：昼夜流转的灵魂栖息地\"\n}",
+  "object": "interaction"
+}

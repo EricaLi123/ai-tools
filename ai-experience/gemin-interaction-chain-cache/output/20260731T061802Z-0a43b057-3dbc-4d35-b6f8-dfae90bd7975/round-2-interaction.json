@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdRejVzYXZqOENKelJqdU1QNjYza3lBWRIXUno1c2Fwdm9QTkc3cWZrUDFZcWM0QUk",
+  "created": "2026-07-31T06:18:47Z",
+  "updated": "2026-07-31T06:18:47Z",
+  "usage": {
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 4253
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_input_tokens": 4253,
+    "total_output_tokens": 17,
+    "total_thought_tokens": 0,
+    "total_tokens": 4270,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EjQKMgERTTIPEZxGtlwJIPuJTM6Z6HFz8o0U6MYZXcHgNB5uiwrHc7mlrtBKBVhYtarek95X",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"图书馆的一天：知识灯塔\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"图书馆的一天：知识灯塔\"\n}",
+  "object": "interaction"
+}

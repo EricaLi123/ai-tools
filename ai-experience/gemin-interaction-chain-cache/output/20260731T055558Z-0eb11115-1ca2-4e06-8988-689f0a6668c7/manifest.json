@@ -1,0 +1,19 @@
+{
+  "run_id": "0eb11115-1ca2-4e06-8988-689f0a6668c7",
+  "started_at": "2026-07-31T05:55:58.591813+00:00",
+  "finished_at": null,
+  "status": "running",
+  "model": "gemini-3-flash-preview",
+  "parameters": {
+    "essay_characters": 6000,
+    "topic": "一座城市公共图书馆从清晨到夜晚的一天",
+    "temperature": 0.1,
+    "thinking_level": "low",
+    "max_output_tokens": 12000,
+    "minimum_cache_tokens": 4096
+  },
+  "contract_sha256": "bc7fbe4426d9958f77cbab21fb97994764449f8fa580e14de354bbbf9128b11b",
+  "rounds": {},
+  "cache": null,
+  "error": null
+}

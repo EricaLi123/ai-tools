@@ -1,0 +1,45 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdUVGxzYXBfREdiVF9qdU1QcDllYnNRTRIXVmpsc2FzdlVPOHVyanVNUHNxemM4QU0",
+  "created": "2026-07-31T05:57:42Z",
+  "updated": "2026-07-31T05:57:42Z",
+  "usage": {
+    "cached_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 2000
+      }
+    ],
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 4320
+      }
+    ],
+    "total_cached_tokens": 2000,
+    "total_input_tokens": 4320,
+    "total_output_tokens": 31,
+    "total_thought_tokens": 0,
+    "total_tokens": 4351,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EjQKMgERTTIPSvlP+USBiPsTFTVViMzNjOZXsqHPqGkdefUnIFZXPmIcu5oNX5gDvE4MuyVx",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"在城市书房的昼夜流光中，寻觅灵魂栖息的永恒灯塔。\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"在城市书房的昼夜流光中，寻觅灵魂栖息的永恒灯塔。\"\n}",
+  "object": "interaction"
+}

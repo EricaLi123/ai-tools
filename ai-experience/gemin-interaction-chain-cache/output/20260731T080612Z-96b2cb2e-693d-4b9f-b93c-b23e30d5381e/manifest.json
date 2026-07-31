@@ -1,0 +1,100 @@
+{
+  "run_id": "96b2cb2e-693d-4b9f-b93c-b23e30d5381e",
+  "started_at": "2026-07-31T08:06:12.214689+00:00",
+  "finished_at": "2026-07-31T08:07:39.273560+00:00",
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "parameters": {
+    "essay_characters": 6000,
+    "requested_first_prompt_characters": 8000,
+    "actual_first_prompt_characters": 8005,
+    "first_prompt_sha256": "0d4835e405cdde160c318bb14598785cea26fd4069e239a3926db387d4eadbcd",
+    "round_delay_seconds": 10.0,
+    "topic": "一座城市公共图书馆从清晨到夜晚的一天",
+    "temperature": 0.1,
+    "thinking_level": "low",
+    "max_output_tokens": 12000,
+    "minimum_cache_tokens": 4096
+  },
+  "contract_sha256": "bc7fbe4426d9958f77cbab21fb97994764449f8fa580e14de354bbbf9128b11b",
+  "rounds": {
+    "round_1": {
+      "interaction_id": "v1_ChdtRmRzYXVqQkdkM09qdU1QdmRIbDJBWRIXbUZkc2F1akJHZDNPanVNUHZkSGwyQVk",
+      "status": "completed",
+      "content_characters": 5644,
+      "content_sha256": "ceeca16dbd77f4684ac3c1954cbb22b8c2707dda424700fa69ceaf8d46acfe8c",
+      "usage": {
+        "total_input_tokens": 5576,
+        "total_output_tokens": 4014,
+        "total_cached_tokens": 0,
+        "total_thought_tokens": 0
+      },
+      "result_file": "D:\\git\\ai-tools\\ai-experience\\gemin-interaction-chain-cache\\output\\20260731T080612Z-96b2cb2e-693d-4b9f-b93c-b23e30d5381e\\round-1-interaction.json"
+    },
+    "round_2": {
+      "interaction_id": "v1_ChdtRmRzYXVqQkdkM09qdU1QdmRIbDJBWRIWcDFkc2FycDB2X21PNHctaTlkcjRCZw",
+      "status": "completed",
+      "content_characters": 9,
+      "content_sha256": "54caa2173bf5eae6706fc63033a431865a7b88a652694b00c75e6704b3dc0465",
+      "usage": {
+        "total_input_tokens": 9622,
+        "total_output_tokens": 15,
+        "total_cached_tokens": 0,
+        "total_thought_tokens": 0
+      },
+      "result_file": "D:\\git\\ai-tools\\ai-experience\\gemin-interaction-chain-cache\\output\\20260731T080612Z-96b2cb2e-693d-4b9f-b93c-b23e30d5381e\\round-2-interaction.json"
+    },
+    "round_3": {
+      "interaction_id": "v1_ChdtRmRzYXVqQkdkM09qdU1QdmRIbDJBWRIXdVZkc2FzZWVOODdMZzhVUHRkeXl3UTg",
+      "status": "completed",
+      "content_characters": 28,
+      "content_sha256": "fcf1bb63661a0ea598d00e8efb09a1465dd78bb9648fd57eb1cf5a167f64a2e0",
+      "usage": {
+        "total_input_tokens": 9674,
+        "total_output_tokens": 31,
+        "total_cached_tokens": 0,
+        "total_thought_tokens": 575
+      },
+      "result_file": "D:\\git\\ai-tools\\ai-experience\\gemin-interaction-chain-cache\\output\\20260731T080612Z-96b2cb2e-693d-4b9f-b93c-b23e30d5381e\\round-3-interaction.json"
+    },
+    "round_4": {
+      "interaction_id": "v1_ChdtRmRzYXVqQkdkM09qdU1QdmRIbDJBWRIXeUZkc2FwNkFNYlRfanVNUHA5ZWJzUU0",
+      "status": "completed",
+      "content_characters": 13,
+      "content_sha256": "e22fb9156c070846dcfac748059f355cae51a72f431a2b797d83f7e011d5c5e4",
+      "usage": {
+        "total_input_tokens": 9742,
+        "total_output_tokens": 19,
+        "total_cached_tokens": 0,
+        "total_thought_tokens": 0
+      },
+      "result_file": "D:\\git\\ai-tools\\ai-experience\\gemin-interaction-chain-cache\\output\\20260731T080612Z-96b2cb2e-693d-4b9f-b93c-b23e30d5381e\\round-4-interaction.json"
+    }
+  },
+  "cache": {
+    "round_2": {
+      "minimum_tokens": 4096,
+      "previous_input_tokens": 5576,
+      "precondition_met": true,
+      "hit": false,
+      "cached_token_ratio": 0.0
+    },
+    "round_3": {
+      "minimum_tokens": 4096,
+      "previous_input_tokens": 9622,
+      "precondition_met": true,
+      "hit": false,
+      "cached_token_ratio": 0.0
+    },
+    "round_4": {
+      "minimum_tokens": 4096,
+      "previous_input_tokens": 9674,
+      "precondition_met": true,
+      "hit": false,
+      "cached_token_ratio": 0.0
+    },
+    "round_3_uses_round_2_parent": true,
+    "round_4_uses_round_3_parent": true
+  },
+  "error": null
+}

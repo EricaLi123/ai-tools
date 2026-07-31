@@ -6,3 +6,5 @@
 
 - `2026-04-02-codex-volta-path.md`
   - Codex 会话改写 PATH，导致 Volta 项目级 Node 版本没有生效
+- `gemin-interaction-chain-cache/`
+  - Gemini Interactions 链式隐式缓存方案、脚本、研究问答和完整调用输出

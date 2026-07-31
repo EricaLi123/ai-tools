@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdtRmRzYXVqQkdkM09qdU1QdmRIbDJBWRIWcDFkc2FycDB2X21PNHctaTlkcjRCZw",
+  "created": "2026-07-31T08:07:03Z",
+  "updated": "2026-07-31T08:07:03Z",
+  "usage": {
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 9622
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_input_tokens": 9622,
+    "total_output_tokens": 15,
+    "total_thought_tokens": 0,
+    "total_tokens": 9637,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EjQKMgERTTIPPkyBpzavX+XMCY6H4PvCgHPzkBOK6FPX7IRGDAy79LlIezYdDAhhQbHeIhaF",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"图书馆的一日流光。\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"图书馆的一日流光。\"\n}",
+  "object": "interaction"
+}

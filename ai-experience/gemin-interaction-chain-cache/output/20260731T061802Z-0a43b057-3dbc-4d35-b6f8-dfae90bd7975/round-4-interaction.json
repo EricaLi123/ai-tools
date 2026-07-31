@@ -1,0 +1,45 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdRejVzYXZqOENKelJqdU1QNjYza3lBWRIWVWo1c2F1RUhwb1dPNHctb2pwZlJCZw",
+  "created": "2026-07-31T06:18:58Z",
+  "updated": "2026-07-31T06:18:58Z",
+  "usage": {
+    "cached_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 1997
+      }
+    ],
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 4371
+      }
+    ],
+    "total_cached_tokens": 1997,
+    "total_input_tokens": 4371,
+    "total_output_tokens": 19,
+    "total_thought_tokens": 0,
+    "total_tokens": 4390,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EjQKMgERTTIPSkO9nBFwAjyKL6nBH9RyLEwG8/nExdpjTW0THPcENMLgpCZzRSVuV63xwZnd",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"城市灯塔：图书馆的昼与夜\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"城市灯塔：图书馆的昼与夜\"\n}",
+  "object": "interaction"
+}

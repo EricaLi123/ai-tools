@@ -1,0 +1,45 @@
+{
+  "status": "completed",
+  "model": "gemini-3-flash-preview",
+  "id": "v1_ChdpVlZzYXNheUVPU2VnOFVQeGQyMXFBMBIXbVZWc2FvaU1NZHZtanVNUGdweUE0QUk",
+  "created": "2026-07-31T07:58:17Z",
+  "updated": "2026-07-31T07:58:17Z",
+  "usage": {
+    "cached_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 8112
+      }
+    ],
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 11258
+      }
+    ],
+    "total_cached_tokens": 8112,
+    "total_input_tokens": 11258,
+    "total_output_tokens": 21,
+    "total_thought_tokens": 375,
+    "total_tokens": 11654,
+    "total_tool_use_tokens": 0
+  },
+  "service_tier": "standard",
+  "steps": [
+    {
+      "signature": "EvsKCvgKARFNMg+xncFJvHDcOqWRSz3R6VOK62wvztGaDAaSe2rgTOZrZe7vsVFfGjgK1rjcJ4xdeBd7+KGpbGz3nwRk1+7Qy64QXNwqhPVEes2AD2ibYi0SljSGZmOeeKq2w6weHXwTymUemkH6JiBX0sPivNCXKjv0BDCC2FR4LbwDzVlcB6H08RRQd3L+MtO9UTvePzUuiCrYcha7LMb/bdTS5r1ji+cgnMiW0XZXt2o7bQV/NqeX21PYl04ponQExg5dg43/h+fMEM4qa7BonLCx0sfz+2hvI7lvlURgA8AJQsvUdlLjLvvq5x/dbxChmQ2eQchdxIVQVZR/MRVusaXZXZs411y5SmPN7Jo0iTkW8k3l7QB7nUe10oLEYGXV/0HeZ0XxrsD+dwGA/0h2hgHkIv29epiDgXBPgNfVxrlohqAd1UH3y6WDOcT8iMtJrHWaCWZ35i/ngbrSI40Yb9r9ZFAvGT/jUvf6rlTALZdT037bGNiLvIE9NqAc5wsGY7gv6lFV+xf5me90KEfKcVbHLKf/hYlXHrwO3x50DfR8D8SrUxHmVWojpyYp0Px2jvF3MDR1996vxLFLWs9oSMmdn8Jr7Uye/ocPw9mLcuAy6Vscqt2AL29JwfDMhFNMpNRUAj2DNubiLHHsPK6vyn9CKEzmFhdq2CYRDW+QRN7tMBIAVedoaOrUyM0sUHf7P942WP7kPAQciAeoi6H26j041EwFrjvqgmaH9kbU3NjkY0FoHu8HIKfhYUtqP4p6OiNfdO61SqpnHW28XjJUAEukbgXCqDWFbhQl9LxPly92/L+sMfs78Km2ffNulDr+tuP3An0fAxswpFnxfKQS0AjE8NgJVa6SF45wX8V+6X4LsP/FXsjdqN1b7Jt0GWNDDD/8jeKfJV7vlR+Uaegn2uJXBqBo+zzjAntuuALhl8NTcrFrIIq+HsyFNf/0ya8mwJPglQxDWlkCjBlbwFAczuoeLp40soA/zA+ZyVemd4NexGjNqeUmxgBsTz/hA+oiWWqw/NkjyEcOvoSlFdaxwdgVJpVS2CDW/KdXxlUgFfLKjRUt0kbxC4XafIMnktV28nESQIubG0Wph6EI20BgGvTZXtY+N8JBqt48Wr4aw8Ng6tua2Hs6urUFWAjXvtdTNWfOGDPXaTSv1jwl3IGMGXZx1NwxLvkSxcAGjFolY08Ow7PpqGEekZWltsw2c/T76q1jgh0TMYoNOVrVTik7o9JO90R3Rg/i9xzHZSuZ8d5Da65IkwjvQD4dZC2KzWiW6CJSbVrMKUwsTRoo8suLgpgenF5RrtfgOQ9cPexy56ipu6nukPZECDvOb4lacONFijZD79AmkF6zkTU3c62tgZe4LDjf/N7RRwMoZuL6rJM024F2dhDKHo31tqAdXX4hwRZF2C636hLNNWkevRaa66cjxbgw+VNOgsMS7okn8F+KduQ5UzmWBvXmaZ3fTP/tLW+RbI3ybk/Rv5Y3r/GpZsHqs2TitSuS6yKDV0RefLT8OcnmjTpgDCk85UOVmmqrAWs+5Y3egasd28mkDimdCLE49KmRvm9zCBMbimha1Bt7Lg7sEt419vv1DKmECKgHzb+eRTsgCyZqyGLwRGNlAtRAmygvBZDeieDbTSnpxHEpZ9T8Gh71TnsY+3lNTLDxPi5pRGfZzQR5URouw2tnNBf8rSyeT8V7b1eXMhBIclPAnMEei60doDOJH59qBoX0TAE1xnJGV+jeAI8UyClSmJgPZ+BQl05cFowPzE8AfW0inC+qmyiZN3CwMGtdq5uGMXZuVOowcPJBUoRA8xAcFrJGUjtZ6A+OQayV+3c6FHjULB3a9TGLIGYJupVXRoTsWB3ohJUO+Tr6owc=",
+      "type": "thought"
+    },
+    {
+      "content": [
+        {
+          "text": "{\n  \"content\": \"灯火长明：城市灵魂的阅读盛宴\"\n}",
+          "type": "text"
+        }
+      ],
+      "type": "model_output"
+    }
+  ],
+  "output_text": "{\n  \"content\": \"灯火长明：城市灵魂的阅读盛宴\"\n}",
+  "object": "interaction"
+}

@@ -1,0 +1,22 @@
+{
+  "run_id": "8ddf2ece-52c1-45e5-be30-5ba1487d34a8",
+  "started_at": "2026-07-31T04:11:52.287659+00:00",
+  "finished_at": "2026-07-31T04:11:53.229006+00:00",
+  "status": "failed",
+  "model": "gemini-3-flash-preview",
+  "parameters": {
+    "essay_characters": 6000,
+    "topic": "一座城市公共图书馆从清晨到夜晚的一天",
+    "temperature": 0.1,
+    "thinking_level": "low",
+    "max_output_tokens": 12000,
+    "minimum_cache_tokens": 4096
+  },
+  "contract_sha256": "bc7fbe4426d9958f77cbab21fb97994764449f8fa580e14de354bbbf9128b11b",
+  "rounds": {},
+  "cache": null,
+  "error": {
+    "type": "APIConnectionError",
+    "message": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1010)"
+  }
+}
